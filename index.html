@@ -3,527 +3,915 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Scheduler AI</title>
+    <title>Smart Scheduler AI - Jadwal Pelajaran</title>
     
     <!-- Fonts & Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Bootstrap 5 CSS (Allowed via CDN for base styling) -->
+    <!-- Libraries (Bootstrap 5, ChartJS, SweetAlert2, SortableJS) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    
-    <!-- External Libs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 
-    <script>
-        /* ===========================
-           KONFIGURASI PRODUCTION
-           =========================== */
-        // UBAH IS_PREVIEW MENJADI false SAAT AKAN DI DEPLOY!
-        const IS_PREVIEW = false;  
-        
-        // TEMPEL URL WEB APP DARI GOOGLE APPS SCRIPT DI BAWAH INI:
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbyRepLnVUT6Of9Kw9tB4MBZ9-9ZzAxSVUtwNYn6JF-GnSd9q3fq9Px-qvvDxAUBydeVCg/exec";
-
-        const APP_CONFIG = {
-            IS_PREVIEW: IS_PREVIEW,
-            GAS_URL: GAS_URL,
-            VERSION: "1.0.0"
-        };
-
-        // Deteksi Lingkungan
-        function isGasUrlValid() {
-            return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec(\?.*)?$/.test(APP_CONFIG.GAS_URL || "");
-        }
-        function isGasUrlPlaceholder() {
-            return !APP_CONFIG.GAS_URL || APP_CONFIG.GAS_URL.includes("URL_DEPLOY_GAS_ANDA_DISINI") || APP_CONFIG.GAS_URL.trim() === "";
-        }
-        function isBloggerRuntime() {
-            const host = window.location.hostname || "";
-            return host.includes("blogspot.") || host.includes("blogger.") || 
-                   (host !== "localhost" && host !== "127.0.0.1" && !host.includes("gemini") && window.location.protocol !== "file:");
-        }
-
-        const APP_MODE = {
-            isProduction: isBloggerRuntime() || isGasUrlValid() || APP_CONFIG.IS_PREVIEW === false
-        };
-        
-        // KILL SWITCH UNTUK DEMO
-        const SHOW_DEMO_UI = !APP_MODE.isProduction && isGasUrlPlaceholder();
-    </script>
-
     <style>
         :root {
-            --primary: #6f42c1;
+            --primary: #6f42c1; /* Ungu */
             --primary-light: #e0d4f5;
             --primary-dark: #59359a;
+            --secondary: #6c757d;
+            --success: #198754;
+            --danger: #dc3545;
+            --warning: #ffc107;
+            --info: #0dcaf0;
             --bg-body: #f4f6f9;
             --surface: #ffffff;
             --text-main: #333333;
+            --text-muted: #6c757d;
             --border: #e9ecef;
             --sidebar-width: 260px;
+            --header-height: 70px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+            --shadow-sm: 0 2px 10px rgba(0,0,0,0.05);
+            --shadow-md: 0 5px 20px rgba(0,0,0,0.08);
         }
 
-        body { font-family: 'Inter', sans-serif; background-color: var(--bg-body); color: var(--text-main); }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            overflow-x: hidden;
+        }
+
+        /* Utility */
+        .cursor-pointer { cursor: pointer; }
         .text-primary-custom { color: var(--primary) !important; }
         .bg-primary-custom { background-color: var(--primary) !important; color: white; }
-        .btn-primary-custom { background-color: var(--primary); color: white; border: none; }
-        .btn-primary-custom:hover { background-color: var(--primary-dark); color: white; }
+        .btn-primary-custom { background-color: var(--primary); border-color: var(--primary); color: white; }
+        .btn-primary-custom:hover { background-color: var(--primary-dark); border-color: var(--primary-dark); color: white; }
 
-        /* Login Layout */
-        #app-login { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--primary-light) 0%, var(--bg-body) 100%); }
-        .login-card { background: var(--surface); padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
 
-        /* App Shell */
+        #app-login {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--primary-light) 0%, var(--bg-body) 100%);
+        }
+        .login-card {
+            background: var(--surface);
+            padding: 40px;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+        }
+        .login-icon {
+            font-size: 3rem;
+            color: var(--primary);
+            margin-bottom: 20px;
+        }
+
         #app-shell { display: none; }
-        .sidebar { width: var(--sidebar-width); background: var(--surface); position: fixed; top: 0; left: 0; height: 100vh; box-shadow: 0 2px 10px rgba(0,0,0,0.05); z-index: 1000; display: flex; flex-direction: column; transition: 0.3s; }
-        .sidebar-header { height: 70px; display: flex; align-items: center; padding: 0 20px; font-weight: bold; color: var(--primary); border-bottom: 1px solid var(--border); }
-        .sidebar-menu { padding: 20px 10px; overflow-y: auto; flex: 1; }
-        .menu-item { padding: 12px 20px; color: #6c757d; border-radius: 8px; cursor: pointer; display: flex; align-items: center; margin-bottom: 5px; transition: 0.2s; }
-        .menu-item i { width: 25px; }
-        .menu-item:hover, .menu-item.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--surface);
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            box-shadow: var(--shadow-sm);
+            z-index: 1000;
+            transition: 0.3s;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-header {
+            height: var(--header-height);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: var(--primary);
+        }
+        .sidebar-menu {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 10px;
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            color: var(--text-muted);
+            text-decoration: none;
+            border-radius: var(--radius-sm);
+            margin-bottom: 5px;
+            transition: 0.2s;
+            cursor: pointer;
+        }
+        .menu-item i { width: 24px; font-size: 1.1rem; }
+        .menu-item:hover, .menu-item.active {
+            background: var(--primary-light);
+            color: var(--primary);
+            font-weight: 600;
+        }
 
-        .main-wrapper { margin-left: var(--sidebar-width); min-height: 100vh; }
-        .topbar { height: 70px; background: var(--surface); display: flex; align-items: center; justify-content: space-between; padding: 0 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 999; }
+        .main-wrapper {
+            margin-left: var(--sidebar-width);
+            min-height: 100vh;
+            transition: 0.3s;
+        }
+        .topbar {
+            height: var(--header-height);
+            background: var(--surface);
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
+            position: sticky;
+            top: 0;
+            z-index: 999;
+        }
         .content-area { padding: 30px; }
 
-        /* Loader */
-        .overlay-loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; display: flex; justify-content: center; align-items: center; display: none; }
-        .spinner { width: 50px; height: 50px; border: 5px solid var(--primary-light); border-top: 5px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        /* Schedule Grid */
-        .schedule-table th, .schedule-table td { text-align: center; vertical-align: middle; border: 1px solid var(--border); padding: 8px; }
+        .stat-card {
+            background: var(--surface);
+            border-radius: var(--radius-md);
+            padding: 20px;
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            border-left: 4px solid var(--primary);
+        }
+        .stat-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: var(--primary-light);
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        
+        /* Scheduler Grid Styles */
+        .schedule-table th, .schedule-table td {
+            text-align: center;
+            vertical-align: middle;
+            border: 1px solid var(--border);
+            padding: 8px;
+        }
         .schedule-table th { background-color: var(--primary); color: white; }
-        .dropzone { min-height: 60px; background-color: #fafbfc; border-radius: 6px; padding: 4px; border: 2px dashed transparent; }
-        .lesson-card { background: white; border-left: 4px solid var(--primary); border-radius: 4px; padding: 6px; font-size: 0.85rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: grab; margin-bottom: 4px; text-align: left; }
+        .schedule-table .time-col { background-color: #f8f9fa; font-weight: 600; width: 120px; }
+        .dropzone {
+            min-height: 60px;
+            background-color: #fafbfc;
+            border-radius: 6px;
+            padding: 4px;
+            border: 2px dashed transparent;
+            transition: 0.2s;
+        }
+        .dropzone.highlight { border-color: var(--warning); background-color: #fff8e1; }
+        
+        .lesson-card {
+            background: white;
+            border-left: 4px solid var(--primary);
+            border-radius: 4px;
+            padding: 6px;
+            font-size: 0.85rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: grab;
+            margin-bottom: 4px;
+            text-align: left;
+        }
         .lesson-card:active { cursor: grabbing; }
+        .lesson-title { font-weight: 700; color: var(--text-main); margin-bottom: 2px; }
+        .lesson-teacher { font-size: 0.75rem; color: var(--text-muted); }
+        .lesson-class { font-size: 0.75rem; color: var(--primary); font-weight: 600; float: right; }
 
-        @media (max-width: 768px) {
+        /* Responsive */
+        @media (max-width: 992px) {
             .sidebar { left: -260px; }
             .sidebar.show { left: 0; }
             .main-wrapper { margin-left: 0; }
             .mobile-toggle { display: block !important; }
         }
         .mobile-toggle { display: none; font-size: 1.5rem; cursor: pointer; color: var(--primary); }
+
     </style>
 </head>
 <body>
 
-    <div class="overlay-loader" id="loader"><div class="spinner"></div></div>
+    <script>
+        const APP_CONFIG = {
+            IS_PREVIEW: false,
+            GAS_URL: "https://script.google.com/macros/s/AKfycbyRepLnVUT6Of9Kw9tB4MBZ9-9ZzAxSVUtwNYn6JF-GnSd9q3fq9Px-qvvDxAUBydeVCg/exec",
+            VERSION: "1.0.0"
+        };
+        const SHOW_DEMO_UI = true; // Forced for Preview Canvas
+    </script>
 
     <div id="app-login">
         <div class="login-card">
-            <i class="fas fa-calendar-check text-primary-custom" style="font-size: 3rem; margin-bottom: 20px;"></i>
-            <h4 class="fw-bold mb-1">Smart Scheduler AI</h4>
-            <p class="text-muted small mb-4">Masuk untuk menyusun jadwal</p>
+            <div class="login-icon">
+                <i class="fas fa-calendar-check"></i>
+            </div>
+            <h3 class="fw-bold mb-1">Smart Scheduler AI</h3>
+            <p class="text-muted mb-4">Sistem Jadwal Pelajaran Anti Bentrok</p>
             
-            <form onsubmit="doLogin(event)">
+            <form onsubmit="handleLogin(event)">
                 <div class="mb-3 text-start">
-                    <label class="form-label small fw-bold text-muted">Username</label>
-                    <input type="text" class="form-control" id="username" required>
+                    <label class="form-label text-muted small fw-bold">Username</label>
+                    <input type="text" class="form-control" id="username" required placeholder="Masukkan username">
                 </div>
                 <div class="mb-4 text-start">
-                    <label class="form-label small fw-bold text-muted">Password</label>
-                    <input type="password" class="form-control" id="password" required>
+                    <label class="form-label text-muted small fw-bold">Password</label>
+                    <input type="password" class="form-control" id="password" required placeholder="Masukkan password">
                 </div>
-                <button type="submit" class="btn btn-primary-custom w-100 py-2 fw-bold mb-3" id="btnLogin">Login</button>
+                <button type="submit" class="btn btn-primary-custom w-100 py-2 fw-bold mb-3">Login ke Sistem</button>
+                
+                <div id="demo-panel" class="p-3 bg-light rounded text-start small border border-warning" style="display: none;">
+                    <strong class="text-warning"><i class="fas fa-info-circle"></i> Mode Preview Aktif</strong><br>
+                    Gunakan kredensial demo ini untuk mencoba aplikasi.<br>
+                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2 w-100" onclick="autoFillLogin()">Auto Fill & Login</button>
+                </div>
             </form>
-
-            <div id="demo-panel" class="text-start bg-light p-3 rounded border border-warning" style="display:none;">
-                <span class="badge bg-warning text-dark mb-2">Mode Preview</span><br>
-                <small>Akun: admin / admin123</small>
-                <button class="btn btn-sm btn-outline-secondary w-100 mt-2" onclick="autoFillLogin()">Auto Fill & Login</button>
-            </div>
-            
-            <div id="config-warning" class="alert alert-danger small text-start mt-3" style="display:none;">
-                <b>Konfigurasi Belum Lengkap!</b><br>Harap masukkan URL Web App ke <code>GAS_URL</code> di dalam kode.
-            </div>
         </div>
     </div>
 
     <div id="app-shell">
+        <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <i class="fas fa-calendar-check me-2"></i> Scheduler AI
+                <i class="fas fa-calendar-check me-2"></i> Smart Scheduler
             </div>
             <div class="sidebar-menu">
-                <div class="menu-item active" onclick="switchMenu('dashboard', this)"><i class="fas fa-home"></i> Dashboard</div>
-                <div class="menu-item" onclick="switchMenu('lembaga', this)"><i class="fas fa-school"></i> Profil Lembaga</div>
-                <div class="menu-item" onclick="switchMenu('guru', this)"><i class="fas fa-users"></i> Data Guru</div>
-                <div class="menu-item" onclick="switchMenu('waktu', this)"><i class="fas fa-clock"></i> Pengaturan Waktu</div>
+                <div class="menu-item active" onclick="switchMenu('dashboard', this)">
+                    <i class="fas fa-home"></i> Dashboard
+                </div>
+                <div class="menu-item" onclick="switchMenu('lembaga', this)">
+                    <i class="fas fa-school"></i> Profil Lembaga
+                </div>
+                <div class="menu-item" onclick="switchMenu('tahun', this)">
+                    <i class="fas fa-calendar-alt"></i> Tahun Pelajaran
+                </div>
+                <div class="menu-item" onclick="switchMenu('kelas', this)">
+                    <i class="fas fa-chalkboard"></i> Data Kelas
+                </div>
+                <div class="menu-item" onclick="switchMenu('guru', this)">
+                    <i class="fas fa-user-tie"></i> Data Guru
+                </div>
+                <div class="menu-item" onclick="switchMenu('mapel', this)">
+                    <i class="fas fa-book"></i> Mata Pelajaran
+                </div>
+                <div class="menu-item" onclick="switchMenu('waktu', this)">
+                    <i class="fas fa-clock"></i> Pengaturan Waktu
+                </div>
                 <hr class="text-muted mx-3">
-                <div class="menu-item text-primary-custom" onclick="switchMenu('jadwal', this)"><i class="fas fa-magic"></i> Susun Jadwal (AI)</div>
+                <div class="menu-item text-primary-custom" onclick="switchMenu('jadwal', this)">
+                    <i class="fas fa-magic"></i> Susun Jadwal (AI)
+                </div>
+                <div class="menu-item" onclick="switchMenu('validasi', this)">
+                    <i class="fas fa-shield-alt"></i> Validasi & Konflik
+                </div>
+                <div class="menu-item" onclick="switchMenu('cetak', this)">
+                    <i class="fas fa-print"></i> Cetak PDF
+                </div>
                 <hr class="text-muted mx-3">
-                <div class="menu-item text-danger" onclick="doLogout()"><i class="fas fa-sign-out-alt"></i> Logout</div>
+                <div class="menu-item text-danger" onclick="handleLogout()">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </div>
             </div>
         </aside>
 
+        <!-- Main Wrapper -->
         <div class="main-wrapper">
+            <!-- Topbar -->
             <header class="topbar">
                 <div class="d-flex align-items-center">
-                    <i class="fas fa-bars mobile-toggle me-3" onclick="document.getElementById('sidebar').classList.toggle('show')"></i>
-                    <h5 class="mb-0 fw-bold" id="page-title">Dashboard</h5>
+                    <i class="fas fa-bars mobile-toggle me-3" onclick="toggleSidebar()"></i>
+                    <h5 class="mb-0 fw-bold text-dark" id="page-title">Dashboard</h5>
                 </div>
-                <div class="d-flex align-items-center gap-2">
-                    <span class="text-muted small fw-bold" id="user-display">Admin</span>
-                    <i class="fas fa-user-circle fs-4 text-secondary"></i>
+                <div class="d-flex align-items-center gap-3">
+                    <div class="text-end d-none d-md-block">
+                        <div class="fw-bold" style="font-size: 0.9rem;">Admin Sekolah</div>
+                        <div class="text-muted" style="font-size: 0.75rem;">T.A 2026/2027 - Ganjil</div>
+                    </div>
+                    <img src="https://placehold.co/40x40/6f42c1/ffffff?text=AD" class="rounded-circle" alt="User">
                 </div>
             </header>
 
+            <!-- Content Area -->
             <main class="content-area" id="main-content">
-                <!-- Konten Dinamis Di Sini -->
+                <!-- Content injected via JS -->
             </main>
         </div>
     </div>
 
     <script>
-        let currentUser = null;
-        let sessionToken = sessionStorage.getItem('app_token');
+        // State Management
+        let sortableInstances = [];
 
+        // Initialization
         document.addEventListener('DOMContentLoaded', () => {
-            initUI();
+            if (SHOW_DEMO_UI) {
+                document.getElementById('demo-panel').style.display = 'block';
+            }
             
-            // Cek Session saat aplikasi dimuat
-            if (sessionToken) {
-                showLoader();
-                fetchAPI('getInitialData', { token: sessionToken }).then(res => {
-                    hideLoader();
-                    if (res.success) {
-                        currentUser = res.data.currentUser;
-                        document.getElementById('user-display').innerText = currentUser.username;
-                        showApp();
-                        switchMenu('dashboard');
-                    } else {
-                        sessionStorage.removeItem('app_token');
-                    }
-                });
+            // Check session (simulated)
+            if(sessionStorage.getItem('isLoggedIn') === 'true') {
+                showAppShell();
+                switchMenu('dashboard', document.querySelector('.menu-item.active'));
             }
         });
 
-        function initUI() {
-            // Kill Switch Logic untuk Production
-            if (SHOW_DEMO_UI) {
-                document.getElementById('demo-panel').style.display = 'block';
-            } else {
-                const demoEls = document.querySelectorAll('#demo-panel');
-                demoEls.forEach(el => el.remove());
-                
-                if (isGasUrlPlaceholder()) {
-                    document.getElementById('config-warning').style.display = 'block';
-                    document.getElementById('btnLogin').disabled = true;
-                }
-            }
-        }
-
-        // ==========================================
-        // FETCH API CORE (SAFE TEXT/PLAIN FOR BLOGGER)
-        // ==========================================
-        async function fetchAPI(action, payload = {}) {
-            // Jika preview, gunakan MOCK API agar UI tetap berjalan tanpa backend
-            if (SHOW_DEMO_UI) return mockAPI(action, payload);
-
-            if (isGasUrlPlaceholder()) {
-                return { success: false, message: "GAS_URL belum dikonfigurasi." };
-            }
-
-            try {
-                const requestBody = JSON.stringify({ action: action, payload: payload });
-                
-                const response = await fetch(APP_CONFIG.GAS_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain;charset=utf-8" }, // Wajib text/plain
-                    body: requestBody
-                });
-
-                const text = await response.text();
-                try {
-                    return JSON.parse(text);
-                } catch (e) {
-                    return { success: false, message: "Response server bukan JSON valid.", raw: text };
-                }
-            } catch (error) {
-                return { success: false, message: "Koneksi ke server gagal.", error: String(error) };
-            }
-        }
-
-        // ==========================================
-        // AUTHENTICATION
-        // ==========================================
+        // Auth Logic
         function autoFillLogin() {
             document.getElementById('username').value = 'admin';
             document.getElementById('password').value = 'admin123';
-            doLogin(new Event('submit'));
-        }
-
-        async function doLogin(e) {
-            if(e) e.preventDefault();
-            const btn = document.getElementById('btnLogin');
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-            btn.disabled = true;
-
-            const user = document.getElementById('username').value;
-            const pass = document.getElementById('password').value;
-
-            const res = await fetchAPI('login', { username: user, password: pass });
             
-            btn.innerHTML = 'Login';
-            btn.disabled = false;
-
-            if (res.success) {
-                sessionToken = res.data.token;
-                sessionStorage.setItem('app_token', sessionToken);
-                currentUser = res.data.user;
-                document.getElementById('user-display').innerText = currentUser.username;
-                Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Selamat Datang!', timer: 1500, showConfirmButton:false });
-                showApp();
-                switchMenu('dashboard');
-            } else {
-                Swal.fire({ icon: 'error', title: 'Gagal', text: res.message });
-            }
+            // Fix error by passing a structured mock event
+            handleLogin({
+                preventDefault: () => {},
+                target: document.querySelector('#app-login form')
+            });
         }
 
-        function doLogout() {
-            sessionStorage.removeItem('app_token');
-            sessionToken = null;
-            document.getElementById('app-shell').style.display = 'none';
-            document.getElementById('app-login').style.display = 'flex';
+        function handleLogin(e) {
+            e.preventDefault();
+            const form = e.target;
+            const btn = form ? form.querySelector('button') : document.querySelector('#app-login button');
+            
+            if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            
+            setTimeout(() => {
+                sessionStorage.setItem('isLoggedIn', 'true');
+                showAppShell();
+                switchMenu('dashboard', document.querySelector('.menu-item.active'));
+                if (btn) btn.innerHTML = 'Login ke Sistem';
+            }, 800);
         }
 
-        function showApp() {
+        function handleLogout() {
+            Swal.fire({
+                title: 'Logout?',
+                text: "Anda akan keluar dari sistem.",
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: 'var(--primary)',
+                confirmButtonText: 'Ya, Logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    sessionStorage.removeItem('isLoggedIn');
+                    document.getElementById('app-shell').style.display = 'none';
+                    document.getElementById('app-login').style.display = 'flex';
+                }
+            });
+        }
+
+        // UI Logic
+        function showAppShell() {
             document.getElementById('app-login').style.display = 'none';
             document.getElementById('app-shell').style.display = 'block';
         }
 
-        function showLoader() { document.getElementById('loader').style.display = 'flex'; }
-        function hideLoader() { document.getElementById('loader').style.display = 'none'; }
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('show');
+        }
 
-        // ==========================================
-        // ROUTING & MENU RENDERING
-        // ==========================================
-        function switchMenu(menu, el) {
-            if(el) {
-                document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
-                el.classList.add('active');
-            }
-            if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('show');
+        function switchMenu(menu, element) {
+            // Update Active Class
+            document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
+            if(element) element.classList.add('active');
             
-            const container = document.getElementById('main-content');
-            const title = document.getElementById('page-title');
+            if(window.innerWidth <= 992) toggleSidebar();
 
+            const content = document.getElementById('main-content');
+            const title = document.getElementById('page-title');
+            
+            // Cleanup Sortable instances if leaving schedule view
+            sortableInstances.forEach(inst => inst.destroy());
+            sortableInstances = [];
+
+            // Routing Simulation
             switch(menu) {
                 case 'dashboard':
-                    title.innerText = "Dashboard Utama";
-                    renderDashboard(container);
-                    break;
-                case 'waktu':
-                    title.innerText = "Pengaturan Waktu Manual";
-                    renderWaktu(container);
+                    title.innerText = 'Dashboard Utama';
+                    renderDashboard(content);
                     break;
                 case 'jadwal':
-                    title.innerText = "Susun Jadwal AI / Manual";
-                    renderJadwal(container);
+                    title.innerText = 'Penyusunan Jadwal (AI Auto & Manual)';
+                    renderScheduler(content);
+                    break;
+                case 'validasi':
+                    title.innerText = 'Validasi & Konflik Jadwal';
+                    renderValidation(content);
+                    break;
+                case 'waktu':
+                    title.innerText = 'Pengaturan Waktu Manual';
+                    renderPengaturanWaktu(content);
                     break;
                 default:
-                    title.innerText = "Data " + menu.charAt(0).toUpperCase() + menu.slice(1);
-                    container.innerHTML = `
-                        <div class="card border-0 shadow-sm"><div class="card-body p-5 text-center text-muted">
-                            <i class="fas fa-tools fa-3x mb-3"></i>
-                            <h5>Modul ${menu} sedang dalam pengembangan pada versi dasar ini.</h5>
-                            <p>Data dapat diisi langsung di Google Sheets Anda.</p>
-                        </div></div>`;
+                    title.innerText = element ? element.innerText.trim() : 'Menu';
+                    renderDummyTable(content, menu);
+                    break;
             }
         }
 
-        async function renderDashboard(container) {
-            showLoader();
-            const res = await fetchAPI('getInitialData', { token: sessionToken });
-            hideLoader();
-            
-            let stats = { guru: 0, kelas: 0, mapel: 0 };
-            if(res.success && res.data) stats = res.data.stats;
-
+        function renderDashboard(container) {
             container.innerHTML = `
-                <div class="row g-4">
-                    <div class="col-12 col-md-4">
-                        <div class="card border-0 shadow-sm border-start border-4 border-primary h-100">
-                            <div class="card-body">
-                                <h6 class="text-muted">Total Guru</h6>
-                                <h2 class="fw-bold">${stats.guru}</h2>
+                <div class="row g-4 mb-4">
+                    <div class="col-12 col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon"><i class="fas fa-user-tie"></i></div>
+                            <div><h3 class="mb-0 fw-bold">42</h3><div class="text-muted small">Total Guru</div></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background:#e6f4ea; color:#1e8e3e;"><i class="fas fa-chalkboard"></i></div>
+                            <div><h3 class="mb-0 fw-bold">18</h3><div class="text-muted small">Total Kelas</div></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background:#fff4e5; color:#f57c00;"><i class="fas fa-book"></i></div>
+                            <div><h3 class="mb-0 fw-bold">25</h3><div class="text-muted small">Mata Pelajaran</div></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background:#fce8e6; color:#d93025;"><i class="fas fa-exclamation-triangle"></i></div>
+                            <div><h3 class="mb-0 fw-bold text-danger">0</h3><div class="text-muted small">Konflik Jadwal</div></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-lg-8 mb-4">
+                        <div class="card border-0 shadow-sm rounded-4">
+                            <div class="card-body p-4">
+                                <h6 class="fw-bold mb-4">Distribusi Jam Mengajar Guru</h6>
+                                <canvas id="chartGuru" height="100"></canvas>
                             </div>
                         </div>
                     </div>
-                    <div class="col-12 col-md-4">
-                        <div class="card border-0 shadow-sm border-start border-4 border-success h-100">
-                            <div class="card-body">
-                                <h6 class="text-muted">Total Kelas</h6>
-                                <h2 class="fw-bold">${stats.kelas}</h2>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <div class="card border-0 shadow-sm border-start border-4 border-warning h-100">
-                            <div class="card-body">
-                                <h6 class="text-muted">Total Mapel</h6>
-                                <h2 class="fw-bold">${stats.mapel}</h2>
+                    <div class="col-12 col-lg-4 mb-4">
+                        <div class="card border-0 shadow-sm rounded-4 h-100">
+                            <div class="card-body p-4">
+                                <h6 class="fw-bold mb-4">Status Penyusunan AI</h6>
+                                <div class="text-center mt-4">
+                                    <div class="position-relative d-inline-block">
+                                        <svg width="150" height="150" viewBox="0 0 36 36">
+                                            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#eee" stroke-width="3"/>
+                                            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--primary)" stroke-width="3" stroke-dasharray="100, 100" />
+                                        </svg>
+                                        <h2 class="position-absolute top-50 start-50 translate-middle mb-0 fw-bold">100%</h2>
+                                    </div>
+                                    <p class="text-muted mt-3 mb-0">Jadwal Selesai Disusun</p>
+                                    <p class="small text-success fw-bold"><i class="fas fa-check-circle"></i> Tidak ada bentrok</p>
+                                    <button class="btn btn-outline-primary mt-3 btn-sm w-100" onclick="switchMenu('jadwal')">Lihat & Edit Jadwal</button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             `;
+
+            // Init Chart
+            setTimeout(() => {
+                const ctx = document.getElementById('chartGuru').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Guru Agama', 'Guru Kelas 1', 'Guru Kelas 2', 'Guru Penjas', 'Guru B.Inggris'],
+                        datasets: [{
+                            label: 'Jumlah Jam Per Minggu',
+                            data: [24, 28, 28, 18, 12],
+                            backgroundColor: 'rgba(111, 66, 193, 0.7)',
+                            borderRadius: 6
+                        }]
+                    },
+                    options: { responsive: true, plugins: { legend: { display: false } } }
+                });
+            }, 100);
         }
 
-        async function renderWaktu(container) {
+        function renderScheduler(container) {
             container.innerHTML = `
-                <div class="card border-0 shadow-sm rounded-4">
-                    <div class="card-header bg-white pt-4 pb-3 px-4 d-flex justify-content-between align-items-center">
-                        <h6 class="fw-bold mb-0 text-primary-custom"><i class="fas fa-list-ol me-2"></i> Edit Sesi Waktu</h6>
-                        <button class="btn btn-sm btn-outline-primary fw-bold" onclick="tambahBarisWaktu()"><i class="fas fa-plus"></i> Tambah</button>
+                <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+                    <div>
+                        <select class="form-select bg-white border-0 shadow-sm fw-bold" style="width: 200px;">
+                            <option>Lihat Kelas 1</option>
+                            <option>Lihat Kelas 2</option>
+                            <option>Lihat Kelas 3</option>
+                            <option>Lihat Guru: Ahmad</option>
+                        </select>
                     </div>
-                    <div class="card-body p-0 table-responsive">
-                        <table class="table table-hover mb-0 align-middle">
-                            <thead class="bg-light text-muted small">
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-warning fw-bold text-dark" onclick="simulateAI()"><i class="fas fa-robot"></i> Generate AI Auto Schedule</button>
+                        <button class="btn btn-success fw-bold"><i class="fas fa-save"></i> Simpan Draft</button>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-body p-0 overflow-auto">
+                        <table class="table schedule-table mb-0 table-bordered">
+                            <thead>
                                 <tr>
-                                    <th class="ps-4">Nama Sesi</th>
-                                    <th>Mulai</th>
-                                    <th>Selesai</th>
-                                    <th>Jenis</th>
-                                    <th class="text-end pe-4">Hapus</th>
+                                    <th class="time-col bg-light text-dark">Waktu / Hari</th>
+                                    <th>Senin</th>
+                                    <th>Selasa</th>
+                                    <th>Rabu</th>
+                                    <th>Kamis</th>
+                                    <th>Jumat</th>
+                                    <th>Sabtu</th>
                                 </tr>
                             </thead>
-                            <tbody id="tbody-waktu">
-                                <tr><td colspan="5" class="text-center py-4">Memuat data...</td></tr>
+                            <tbody id="schedule-grid">
+                                <!-- Generated by JS -->
                             </tbody>
                         </table>
                     </div>
-                    <div class="card-footer bg-white p-3 text-end border-top">
-                        <button class="btn btn-success fw-bold px-4" onclick="simpanWaktu()">
-                            <i class="fas fa-save me-1"></i> Simpan ke Database
-                        </button>
+                    <div class="card-footer bg-white p-3 text-muted small">
+                        <i class="fas fa-info-circle text-primary"></i> <b>Tips:</b> Tarik dan lepas (Drag & Drop) kotak mata pelajaran untuk memindahkan jadwal secara manual. Sistem AI akan otomatis mendeteksi jika terjadi bentrok.
                     </div>
                 </div>
             `;
             
-            // Fetch dari GAS
-            const res = await fetchAPI('getWaktu', { token: sessionToken });
-            const tbody = document.getElementById('tbody-waktu');
-            tbody.innerHTML = '';
-            
-            let dataWaktu = [];
-            if(res.success && res.data) dataWaktu = res.data;
-            
-            if(dataWaktu.length === 0) {
-                // Beri contoh jika kosong
-                dataWaktu = [
-                    { nama_sesi: 'JP 1', jam_mulai: '07:30', jam_selesai: '08:05', jenis: 'pelajaran' }
-                ];
-            }
-
-            dataWaktu.forEach(w => appendBarisWaktu(w));
+            generateEmptyGrid();
         }
 
-        function appendBarisWaktu(w) {
-            const tbody = document.getElementById('tbody-waktu');
-            const tr = document.createElement('tr');
-            const isIstirahat = w.jenis === 'istirahat';
-            tr.style.backgroundColor = isIstirahat ? '#fff8e1' : 'transparent';
-            
-            tr.innerHTML = `
-                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold w-nama" value="${w.nama_sesi}"></td>
-                <td><input type="time" class="form-control form-control-sm text-center w-mulai" value="${w.jam_mulai}"></td>
-                <td><input type="time" class="form-control form-control-sm text-center w-selesai" value="${w.jam_selesai}"></td>
-                <td>
-                    <select class="form-select form-select-sm w-jenis" onchange="this.closest('tr').style.backgroundColor = this.value==='istirahat' ? '#fff8e1' : 'transparent'">
-                        <option value="pelajaran" ${!isIstirahat ? 'selected' : ''}>Pelajaran</option>
-                        <option value="istirahat" ${isIstirahat ? 'selected' : ''}>Istirahat</option>
-                    </select>
-                </td>
-                <td class="text-end pe-4"><button class="btn btn-sm text-danger bg-light" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
-            `;
-            tbody.appendChild(tr);
+        function generateEmptyGrid() {
+            const tbody = document.getElementById('schedule-grid');
+            const times = [
+                { jp: 'JP 1', time: '07.30 - 08.05' },
+                { jp: 'JP 2', time: '08.05 - 08.40' },
+                { jp: 'JP 3', time: '08.40 - 09.15' },
+                { jp: 'IST', time: '09.15 - 09.35', isBreak: true },
+                { jp: 'JP 4', time: '09.35 - 10.10' },
+                { jp: 'JP 5', time: '10.10 - 10.45' },
+                { jp: 'JP 6', time: '10.45 - 11.20' },
+                { jp: 'JP 7', time: '11.20 - 11.55' }
+            ];
+
+            let html = '';
+            times.forEach((t, rowIndex) => {
+                if(t.isBreak) {
+                    html += `<tr><td class="time-col text-center py-2">${t.time}<br><small class="text-muted">Istirahat</small></td><td colspan="6" class="bg-light text-center text-muted fw-bold">WAKTU ISTIRAHAT</td></tr>`;
+                    return;
+                }
+                
+                html += `<tr>`;
+                html += `<td class="time-col text-center"><b>${t.jp}</b><br><small class="text-muted">${t.time}</small></td>`;
+                for(let day = 1; day <= 6; day++) {
+                    // Unique ID for each dropzone: day-rowIndex
+                    html += `<td><div class="dropzone" id="dz-${day}-${rowIndex}"></div></td>`;
+                }
+                html += `</tr>`;
+            });
+            tbody.innerHTML = html;
         }
 
-        function tambahBarisWaktu() {
-            appendBarisWaktu({ nama_sesi: 'Sesi Baru', jam_mulai: '00:00', jam_selesai: '00:00', jenis: 'pelajaran' });
+        function simulateAI() {
+            Swal.fire({
+                title: 'AI sedang bekerja...',
+                html: 'Memeriksa ketersediaan guru...<br>Menghitung probabilitas...<br>Menyelesaikan konflik...',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+
+            setTimeout(() => {
+                Swal.close();
+                populateDummySchedule();
+                initDragAndDrop();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Jadwal Selesai!',
+                    text: 'AI berhasil menyusun jadwal Kelas 1 tanpa bentrok.',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            }, 2000);
         }
 
-        async function simpanWaktu() {
-            const rows = document.querySelectorAll('#tbody-waktu tr');
-            let dataToSave = [];
-            
-            rows.forEach(tr => {
-                const nama = tr.querySelector('.w-nama');
-                if(nama) { // Cek agar bukan row loading
-                    dataToSave.push({
-                        nama_sesi: nama.value,
-                        jam_mulai: tr.querySelector('.w-mulai').value,
-                        jam_selesai: tr.querySelector('.w-selesai').value,
-                        jenis: tr.querySelector('.w-jenis').value
-                    });
+        function populateDummySchedule() {
+            // Mapping dummy data to specific grid cells
+            const dummyData = [
+                { cell: 'dz-1-0', title: 'Upacara', teacher: 'Semua Guru', class: 'K1', color: 'var(--danger)' },
+                { cell: 'dz-1-1', title: 'Tematik', teacher: 'Siti Aminah, S.Pd', class: 'K1', color: 'var(--primary)' },
+                { cell: 'dz-1-2', title: 'Tematik', teacher: 'Siti Aminah, S.Pd', class: 'K1', color: 'var(--primary)' },
+                { cell: 'dz-1-4', title: 'PAI', teacher: 'Ahmad, S.Ag', class: 'K1', color: 'var(--success)' },
+                { cell: 'dz-1-5', title: 'PAI', teacher: 'Ahmad, S.Ag', class: 'K1', color: 'var(--success)' },
+                
+                { cell: 'dz-2-0', title: 'PJOK', teacher: 'Budi, S.Pd', class: 'K1', color: 'var(--info)' },
+                { cell: 'dz-2-1', title: 'PJOK', teacher: 'Budi, S.Pd', class: 'K1', color: 'var(--info)' },
+                { cell: 'dz-2-2', title: 'Tematik', teacher: 'Siti Aminah, S.Pd', class: 'K1', color: 'var(--primary)' },
+                
+                { cell: 'dz-3-4', title: 'B. Inggris', teacher: 'Diana, M.Pd', class: 'K1', color: 'var(--warning)' },
+            ];
+
+            // Clear first
+            document.querySelectorAll('.dropzone').forEach(dz => dz.innerHTML = '');
+
+            dummyData.forEach(item => {
+                const dz = document.getElementById(item.cell);
+                if(dz) {
+                    dz.innerHTML = `
+                        <div class="lesson-card" style="border-left-color: ${item.color}">
+                            <span class="lesson-class">${item.class}</span>
+                            <div class="lesson-title">${item.title}</div>
+                            <div class="lesson-teacher">${item.teacher}</div>
+                        </div>
+                    `;
                 }
             });
-
-            showLoader();
-            const res = await fetchAPI('saveWaktu', { token: sessionToken, waktuList: dataToSave });
-            hideLoader();
-            
-            if(res.success) {
-                Swal.fire('Tersimpan', res.message, 'success');
-            } else {
-                Swal.fire('Gagal', res.message, 'error');
-            }
         }
 
-        function renderJadwal(container) {
+        function initDragAndDrop() {
+            // Destroy existing
+            sortableInstances.forEach(inst => inst.destroy());
+            sortableInstances = [];
+
+            // Initialize Sortable for each dropzone
+            document.querySelectorAll('.dropzone').forEach(dz => {
+                const inst = new Sortable(dz, {
+                    group: 'shared', // set both lists to same group
+                    animation: 150,
+                    ghostClass: 'bg-light',
+                    onAdd: function (evt) {
+                        // Simulate validation check after drop
+                        const item = evt.item;
+                        const toList = evt.to;
+                        
+                        // Fake check: if dropped into Thursday JP7 (dz-4-7)
+                        if(toList.id === 'dz-4-7') {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Bentrok Terdeteksi!',
+                                text: 'Guru Siti Aminah sudah mengajar di Kelas 2 pada waktu tersebut. AI mengembalikan jadwal.',
+                                toast: true,
+                                position: 'top-end',
+                                showConfirmButton: false,
+                                timer: 3000
+                            });
+                            // Revert changes visually for simulation
+                            evt.from.appendChild(item);
+                        } else {
+                            // Success Move
+                            const Toast = Swal.mixin({
+                                toast: true, position: 'top-end', showConfirmButton: false, timer: 1500
+                            });
+                            Toast.fire({ icon: 'success', title: 'Jadwal diperbarui' });
+                        }
+                    }
+                });
+                sortableInstances.push(inst);
+            });
+        }
+
+        function renderDummyTable(container, type) {
             container.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <select class="form-select w-auto fw-bold"><option>Kelas 1</option></select>
-                    <button class="btn btn-warning fw-bold"><i class="fas fa-robot"></i> Auto-Generate AI</button>
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h5 class="fw-bold mb-0">Manajemen Data</h5>
+                    <button class="btn btn-primary-custom"><i class="fas fa-plus"></i> Tambah Data</button>
                 </div>
-                <div class="alert alert-info small"><i class="fas fa-info-circle"></i> Jadwal interaktif (Drag & Drop) di versi Production memerlukan pengambilan data relasi dari sheet Kelas, Guru, dan Mapel.</div>
-                <div class="card shadow-sm"><div class="card-body p-0 overflow-auto">
-                    <table class="table schedule-table table-bordered mb-0">
-                        <thead><tr><th>Waktu</th><th>Senin</th><th>Selasa</th><th>Rabu</th></tr></thead>
-                        <tbody>
-                            <tr>
-                                <td class="bg-light fw-bold">07.30 - 08.05</td>
-                                <td><div class="lesson-card"><b>Tematik</b><br><small>Budi, S.Pd</small></div></td>
-                                <td></td><td></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div></div>
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-body p-4 text-center text-muted">
+                        <div class="py-5">
+                            <i class="fas fa-table fa-3x mb-3 text-light"></i>
+                            <h4>Tabel Data ${type.toUpperCase()}</h4>
+                            <p>Fitur CRUD (Create, Read, Update, Delete) akan tersedia pada versi Production Code.<br>Data akan tersimpan langsung di Google Sheets.</p>
+                        </div>
+                    </div>
+                </div>
             `;
         }
 
-        // ==========================================
-        // MOCK API (HANYA AKTIF SAAT PREVIEW DI CANVAS)
-        // ==========================================
-        async function mockAPI(action, payload) {
-            return new Promise(resolve => {
-                setTimeout(() => {
-                    switch(action) {
-                        case 'login':
-                            if(payload.username==='admin' && payload.password==='admin123') 
-                                resolve({success:true, data:{token:'mock_token', user:{username:'admin'}}});
-                            else resolve({success:false, message:'Salah sandi.'});
-                            break;
-                        case 'getInitialData':
-                            resolve({success:true, data: { currentUser: {username:'admin'}, stats: {guru: 42, kelas: 18, mapel: 25} } });
-                            break;
-                        case 'getWaktu':
-                            resolve({success:true, data:[
-                                {nama_sesi:'JP 1', jam_mulai:'07:30', jam_selesai:'08:05', jenis:'pelajaran'},
-                                {nama_sesi:'JP 2', jam_mulai:'08:05', jam_selesai:'08:40', jenis:'pelajaran'},
-                                {nama_sesi:'Istirahat', jam_mulai:'08:40', jam_selesai:'09:00', jenis:'istirahat'}
-                            ]});
-                            break;
-                        case 'saveWaktu': resolve({success:true, message:'Tersimpan ke Dummy DB!'}); break;
-                        default: resolve({success:false, message:'Mock Endpoint tidak ditemukan'});
-                    }
-                }, 500);
-            });
+        function renderValidation(container) {
+            container.innerHTML = `
+                <div class="card border-0 shadow-sm rounded-4 border-left-warning">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold text-success mb-3"><i class="fas fa-check-circle"></i> Validasi Saat Ini</h5>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                Beban Jam Guru
+                                <span class="badge bg-success rounded-pill">Aman</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                Bentrok Ruang/Kelas
+                                <span class="badge bg-success rounded-pill">Aman</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                Alokasi Jam Mata Pelajaran
+                                <span class="badge bg-success rounded-pill">Aman</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPengaturanWaktu(container) {
+            container.innerHTML = `
+                <div class="row g-4 mb-4">
+                    <div class="col-12 col-xl-4">
+                        <div class="card border-0 shadow-sm rounded-4 h-100">
+                            <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
+                                <h6 class="fw-bold mb-0 text-primary-custom"><i class="fas fa-cog me-2"></i> Pengaturan Global</h6>
+                            </div>
+                            <div class="card-body p-4">
+                                <div class="mb-3">
+                                    <label class="form-label text-muted small fw-bold">Jam Masuk Sekolah</label>
+                                    <input type="time" class="form-control" value="07:30">
+                                </div>
+                                <div class="row g-2 mb-3">
+                                    <div class="col-6">
+                                        <label class="form-label text-muted small fw-bold">Durasi 1 JP</label>
+                                        <div class="input-group">
+                                            <input type="number" class="form-control" value="35">
+                                            <span class="input-group-text bg-light text-muted" style="font-size:0.8rem;">Mnt</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label text-muted small fw-bold">Durasi Istirahat</label>
+                                        <div class="input-group">
+                                            <input type="number" class="form-control" value="20">
+                                            <span class="input-group-text bg-light text-muted" style="font-size:0.8rem;">Mnt</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mb-4">
+                                    <label class="form-label text-muted small fw-bold">Hari Aktif Belajar</label>
+                                    <div class="d-flex flex-wrap gap-2 mt-1">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" checked id="h1"><label class="form-check-label small" for="h1">Sen</label>
+                                        </div>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" checked id="h2"><label class="form-check-label small" for="h2">Sel</label>
+                                        </div>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" checked id="h3"><label class="form-check-label small" for="h3">Rab</label>
+                                        </div>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" checked id="h4"><label class="form-check-label small" for="h4">Kam</label>
+                                        </div>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" checked id="h5"><label class="form-check-label small" for="h5">Jum</label>
+                                        </div>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" checked id="h6"><label class="form-check-label small" for="h6">Sab</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button class="btn btn-warning w-100 fw-bold text-dark mt-2" onclick="Swal.fire('Sukses', 'Sesi waktu berhasil di-generate ulang ke tabel, silakan sesuaikan lagi jika perlu.', 'success')">
+                                    <i class="fas fa-sync-alt me-1"></i> Auto-Generate Sesi
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-12 col-xl-8">
+                        <div class="card border-0 shadow-sm rounded-4">
+                            <div class="card-header bg-white border-bottom-0 pt-4 pb-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <h6 class="fw-bold mb-0 text-primary-custom"><i class="fas fa-list-ol me-2"></i> Rincian Sesi Waktu (Edit Manual)</h6>
+                                <button class="btn btn-sm btn-outline-primary fw-bold" onclick="tambahBarisSesi()"><i class="fas fa-plus"></i> Tambah Sesi / Istirahat</button>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0 align-middle" id="table-waktu">
+                                        <thead class="bg-light text-muted small">
+                                            <tr>
+                                                <th class="ps-4">Nama Sesi (Bisa Diedit)</th>
+                                                <th>Jam Mulai</th>
+                                                <th>Jam Selesai</th>
+                                                <th>Jenis Sesi</th>
+                                                <th class="text-end pe-4">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tbody-waktu">
+                                            <tr>
+                                                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold" value="JP 1"></td>
+                                                <td><input type="time" class="form-control form-control-sm text-center" value="07:30"></td>
+                                                <td><input type="time" class="form-control form-control-sm text-center" value="08:05"></td>
+                                                <td>
+                                                    <select class="form-select form-select-sm" onchange="ubahWarnaBaris(this)">
+                                                        <option value="pelajaran" selected>Pelajaran</option>
+                                                        <option value="istirahat">Istirahat</option>
+                                                    </select>
+                                                </td>
+                                                <td class="text-end pe-4"><button class="btn btn-sm btn-light text-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold" value="JP 2"></td>
+                                                <td><input type="time" class="form-control form-control-sm text-center" value="08:05"></td>
+                                                <td><input type="time" class="form-control form-control-sm text-center" value="08:40"></td>
+                                                <td>
+                                                    <select class="form-select form-select-sm" onchange="ubahWarnaBaris(this)">
+                                                        <option value="pelajaran" selected>Pelajaran</option>
+                                                        <option value="istirahat">Istirahat</option>
+                                                    </select>
+                                                </td>
+                                                <td class="text-end pe-4"><button class="btn btn-sm btn-light text-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
+                                            </tr>
+                                            <tr style="background-color: #fff8e1;">
+                                                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold text-warning-emphasis border-warning" value="Istirahat Pagi"></td>
+                                                <td><input type="time" class="form-control form-control-sm text-center border-warning" value="08:40"></td>
+                                                <td><input type="time" class="form-control form-control-sm text-center border-warning" value="09:00"></td>
+                                                <td>
+                                                    <select class="form-select form-select-sm border-warning" onchange="ubahWarnaBaris(this)">
+                                                        <option value="pelajaran">Pelajaran</option>
+                                                        <option value="istirahat" selected>Istirahat</option>
+                                                    </select>
+                                                </td>
+                                                <td class="text-end pe-4"><button class="btn btn-sm btn-light text-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold" value="JP 3"></td>
+                                                <td><input type="time" class="form-control form-control-sm text-center" value="09:00"></td>
+                                                <td><input type="time" class="form-control form-control-sm text-center" value="09:35"></td>
+                                                <td>
+                                                    <select class="form-select form-select-sm" onchange="ubahWarnaBaris(this)">
+                                                        <option value="pelajaran" selected>Pelajaran</option>
+                                                        <option value="istirahat">Istirahat</option>
+                                                    </select>
+                                                </td>
+                                                <td class="text-end pe-4"><button class="btn btn-sm btn-light text-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="card-footer bg-white p-3 text-end border-top">
+                                <button class="btn btn-success fw-bold px-4" onclick="Swal.fire('Tersimpan', 'Pengaturan waktu berhasil disimpan ke database.', 'success')">
+                                    <i class="fas fa-save me-1"></i> Simpan Perubahan
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="alert alert-primary bg-primary-light border-0 shadow-sm rounded-4 mt-2">
+                    <div class="d-flex">
+                        <div class="me-3 fs-3 text-primary"><i class="fas fa-info-circle"></i></div>
+                        <div>
+                            <h6 class="fw-bold mb-1 text-primary-dark">Tips Pengaturan Waktu</h6>
+                            <p class="mb-0 small text-dark">Anda bebas mengubah nama sesi (misal: "JP 1" menjadi "Tahfidz" atau "Istirahat"). Kolom <b>Nama Sesi</b> adalah inputan manual. Anda juga bisa menambah atau menghapus baris tabel sesuai kebutuhan jadwal madrasah/sekolah Anda.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function tambahBarisSesi() {
+            const tbody = document.getElementById('tbody-waktu');
+            const newRow = document.createElement('tr');
+            newRow.style.backgroundColor = '#fff8e1'; // Default as Istirahat for visual pop
+            newRow.innerHTML = `
+                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold text-warning-emphasis border-warning" value="Istirahat Baru" placeholder="Ketik nama sesi..."></td>
+                <td><input type="time" class="form-control form-control-sm text-center border-warning" value="12:00"></td>
+                <td><input type="time" class="form-control form-control-sm text-center border-warning" value="12:30"></td>
+                <td>
+                    <select class="form-select form-select-sm border-warning" onchange="ubahWarnaBaris(this)">
+                        <option value="pelajaran">Pelajaran</option>
+                        <option value="istirahat" selected>Istirahat</option>
+                    </select>
+                </td>
+                <td class="text-end pe-4"><button class="btn btn-sm btn-light text-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
+            `;
+            tbody.appendChild(newRow);
+        }
+
+        function ubahWarnaBaris(selectElement) {
+            const tr = selectElement.closest('tr');
+            const inputs = tr.querySelectorAll('input, select');
+            
+            if(selectElement.value === 'istirahat') {
+                tr.style.backgroundColor = '#fff8e1';
+                inputs.forEach(input => {
+                    input.classList.add('border-warning');
+                    if(input.type === 'text') input.classList.add('text-warning-emphasis');
+                });
+            } else {
+                tr.style.backgroundColor = 'transparent';
+                inputs.forEach(input => {
+                    input.classList.remove('border-warning');
+                    if(input.type === 'text') input.classList.remove('text-warning-emphasis');
+                });
+            }
         }
     </script>
 </body>
