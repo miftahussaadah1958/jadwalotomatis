@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Scheduler AI</title>
+    
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Bootstrap 5 CSS (Allowed via CDN for base styling) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- External Libs -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
+    <script>
+        /* ===========================
+           KONFIGURASI PRODUCTION
+           =========================== */
+        // UBAH IS_PREVIEW MENJADI false SAAT AKAN DI DEPLOY!
+        const IS_PREVIEW = false;  
+        
+        // TEMPEL URL WEB APP DARI GOOGLE APPS SCRIPT DI BAWAH INI:
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyRepLnVUT6Of9Kw9tB4MBZ9-9ZzAxSVUtwNYn6JF-GnSd9q3fq9Px-qvvDxAUBydeVCg/exec";
+
+        const APP_CONFIG = {
+            IS_PREVIEW: IS_PREVIEW,
+            GAS_URL: GAS_URL,
+            VERSION: "1.0.0"
+        };
+
+        // Deteksi Lingkungan
+        function isGasUrlValid() {
+            return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec(\?.*)?$/.test(APP_CONFIG.GAS_URL || "");
+        }
+        function isGasUrlPlaceholder() {
+            return !APP_CONFIG.GAS_URL || APP_CONFIG.GAS_URL.includes("URL_DEPLOY_GAS_ANDA_DISINI") || APP_CONFIG.GAS_URL.trim() === "";
+        }
+        function isBloggerRuntime() {
+            const host = window.location.hostname || "";
+            return host.includes("blogspot.") || host.includes("blogger.") || 
+                   (host !== "localhost" && host !== "127.0.0.1" && !host.includes("gemini") && window.location.protocol !== "file:");
+        }
+
+        const APP_MODE = {
+            isProduction: isBloggerRuntime() || isGasUrlValid() || APP_CONFIG.IS_PREVIEW === false
+        };
+        
+        // KILL SWITCH UNTUK DEMO
+        const SHOW_DEMO_UI = !APP_MODE.isProduction && isGasUrlPlaceholder();
+    </script>
+
+    <style>
+        :root {
+            --primary: #6f42c1;
+            --primary-light: #e0d4f5;
+            --primary-dark: #59359a;
+            --bg-body: #f4f6f9;
+            --surface: #ffffff;
+            --text-main: #333333;
+            --border: #e9ecef;
+            --sidebar-width: 260px;
+        }
+
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-body); color: var(--text-main); }
+        .text-primary-custom { color: var(--primary) !important; }
+        .bg-primary-custom { background-color: var(--primary) !important; color: white; }
+        .btn-primary-custom { background-color: var(--primary); color: white; border: none; }
+        .btn-primary-custom:hover { background-color: var(--primary-dark); color: white; }
+
+        /* Login Layout */
+        #app-login { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--primary-light) 0%, var(--bg-body) 100%); }
+        .login-card { background: var(--surface); padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+
+        /* App Shell */
+        #app-shell { display: none; }
+        .sidebar { width: var(--sidebar-width); background: var(--surface); position: fixed; top: 0; left: 0; height: 100vh; box-shadow: 0 2px 10px rgba(0,0,0,0.05); z-index: 1000; display: flex; flex-direction: column; transition: 0.3s; }
+        .sidebar-header { height: 70px; display: flex; align-items: center; padding: 0 20px; font-weight: bold; color: var(--primary); border-bottom: 1px solid var(--border); }
+        .sidebar-menu { padding: 20px 10px; overflow-y: auto; flex: 1; }
+        .menu-item { padding: 12px 20px; color: #6c757d; border-radius: 8px; cursor: pointer; display: flex; align-items: center; margin-bottom: 5px; transition: 0.2s; }
+        .menu-item i { width: 25px; }
+        .menu-item:hover, .menu-item.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+
+        .main-wrapper { margin-left: var(--sidebar-width); min-height: 100vh; }
+        .topbar { height: 70px; background: var(--surface); display: flex; align-items: center; justify-content: space-between; padding: 0 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 999; }
+        .content-area { padding: 30px; }
+
+        /* Loader */
+        .overlay-loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; display: flex; justify-content: center; align-items: center; display: none; }
+        .spinner { width: 50px; height: 50px; border: 5px solid var(--primary-light); border-top: 5px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Schedule Grid */
+        .schedule-table th, .schedule-table td { text-align: center; vertical-align: middle; border: 1px solid var(--border); padding: 8px; }
+        .schedule-table th { background-color: var(--primary); color: white; }
+        .dropzone { min-height: 60px; background-color: #fafbfc; border-radius: 6px; padding: 4px; border: 2px dashed transparent; }
+        .lesson-card { background: white; border-left: 4px solid var(--primary); border-radius: 4px; padding: 6px; font-size: 0.85rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: grab; margin-bottom: 4px; text-align: left; }
+        .lesson-card:active { cursor: grabbing; }
+
+        @media (max-width: 768px) {
+            .sidebar { left: -260px; }
+            .sidebar.show { left: 0; }
+            .main-wrapper { margin-left: 0; }
+            .mobile-toggle { display: block !important; }
+        }
+        .mobile-toggle { display: none; font-size: 1.5rem; cursor: pointer; color: var(--primary); }
+    </style>
+</head>
+<body>
+
+    <div class="overlay-loader" id="loader"><div class="spinner"></div></div>
+
+    <div id="app-login">
+        <div class="login-card">
+            <i class="fas fa-calendar-check text-primary-custom" style="font-size: 3rem; margin-bottom: 20px;"></i>
+            <h4 class="fw-bold mb-1">Smart Scheduler AI</h4>
+            <p class="text-muted small mb-4">Masuk untuk menyusun jadwal</p>
+            
+            <form onsubmit="doLogin(event)">
+                <div class="mb-3 text-start">
+                    <label class="form-label small fw-bold text-muted">Username</label>
+                    <input type="text" class="form-control" id="username" required>
+                </div>
+                <div class="mb-4 text-start">
+                    <label class="form-label small fw-bold text-muted">Password</label>
+                    <input type="password" class="form-control" id="password" required>
+                </div>
+                <button type="submit" class="btn btn-primary-custom w-100 py-2 fw-bold mb-3" id="btnLogin">Login</button>
+            </form>
+
+            <div id="demo-panel" class="text-start bg-light p-3 rounded border border-warning" style="display:none;">
+                <span class="badge bg-warning text-dark mb-2">Mode Preview</span><br>
+                <small>Akun: admin / admin123</small>
+                <button class="btn btn-sm btn-outline-secondary w-100 mt-2" onclick="autoFillLogin()">Auto Fill & Login</button>
+            </div>
+            
+            <div id="config-warning" class="alert alert-danger small text-start mt-3" style="display:none;">
+                <b>Konfigurasi Belum Lengkap!</b><br>Harap masukkan URL Web App ke <code>GAS_URL</code> di dalam kode.
+            </div>
+        </div>
+    </div>
+
+    <div id="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <i class="fas fa-calendar-check me-2"></i> Scheduler AI
+            </div>
+            <div class="sidebar-menu">
+                <div class="menu-item active" onclick="switchMenu('dashboard', this)"><i class="fas fa-home"></i> Dashboard</div>
+                <div class="menu-item" onclick="switchMenu('lembaga', this)"><i class="fas fa-school"></i> Profil Lembaga</div>
+                <div class="menu-item" onclick="switchMenu('guru', this)"><i class="fas fa-users"></i> Data Guru</div>
+                <div class="menu-item" onclick="switchMenu('waktu', this)"><i class="fas fa-clock"></i> Pengaturan Waktu</div>
+                <hr class="text-muted mx-3">
+                <div class="menu-item text-primary-custom" onclick="switchMenu('jadwal', this)"><i class="fas fa-magic"></i> Susun Jadwal (AI)</div>
+                <hr class="text-muted mx-3">
+                <div class="menu-item text-danger" onclick="doLogout()"><i class="fas fa-sign-out-alt"></i> Logout</div>
+            </div>
+        </aside>
+
+        <div class="main-wrapper">
+            <header class="topbar">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-bars mobile-toggle me-3" onclick="document.getElementById('sidebar').classList.toggle('show')"></i>
+                    <h5 class="mb-0 fw-bold" id="page-title">Dashboard</h5>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-muted small fw-bold" id="user-display">Admin</span>
+                    <i class="fas fa-user-circle fs-4 text-secondary"></i>
+                </div>
+            </header>
+
+            <main class="content-area" id="main-content">
+                <!-- Konten Dinamis Di Sini -->
+            </main>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let sessionToken = sessionStorage.getItem('app_token');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initUI();
+            
+            // Cek Session saat aplikasi dimuat
+            if (sessionToken) {
+                showLoader();
+                fetchAPI('getInitialData', { token: sessionToken }).then(res => {
+                    hideLoader();
+                    if (res.success) {
+                        currentUser = res.data.currentUser;
+                        document.getElementById('user-display').innerText = currentUser.username;
+                        showApp();
+                        switchMenu('dashboard');
+                    } else {
+                        sessionStorage.removeItem('app_token');
+                    }
+                });
+            }
+        });
+
+        function initUI() {
+            // Kill Switch Logic untuk Production
+            if (SHOW_DEMO_UI) {
+                document.getElementById('demo-panel').style.display = 'block';
+            } else {
+                const demoEls = document.querySelectorAll('#demo-panel');
+                demoEls.forEach(el => el.remove());
+                
+                if (isGasUrlPlaceholder()) {
+                    document.getElementById('config-warning').style.display = 'block';
+                    document.getElementById('btnLogin').disabled = true;
+                }
+            }
+        }
+
+        // ==========================================
+        // FETCH API CORE (SAFE TEXT/PLAIN FOR BLOGGER)
+        // ==========================================
+        async function fetchAPI(action, payload = {}) {
+            // Jika preview, gunakan MOCK API agar UI tetap berjalan tanpa backend
+            if (SHOW_DEMO_UI) return mockAPI(action, payload);
+
+            if (isGasUrlPlaceholder()) {
+                return { success: false, message: "GAS_URL belum dikonfigurasi." };
+            }
+
+            try {
+                const requestBody = JSON.stringify({ action: action, payload: payload });
+                
+                const response = await fetch(APP_CONFIG.GAS_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" }, // Wajib text/plain
+                    body: requestBody
+                });
+
+                const text = await response.text();
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    return { success: false, message: "Response server bukan JSON valid.", raw: text };
+                }
+            } catch (error) {
+                return { success: false, message: "Koneksi ke server gagal.", error: String(error) };
+            }
+        }
+
+        // ==========================================
+        // AUTHENTICATION
+        // ==========================================
+        function autoFillLogin() {
+            document.getElementById('username').value = 'admin';
+            document.getElementById('password').value = 'admin123';
+            doLogin(new Event('submit'));
+        }
+
+        async function doLogin(e) {
+            if(e) e.preventDefault();
+            const btn = document.getElementById('btnLogin');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            btn.disabled = true;
+
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+
+            const res = await fetchAPI('login', { username: user, password: pass });
+            
+            btn.innerHTML = 'Login';
+            btn.disabled = false;
+
+            if (res.success) {
+                sessionToken = res.data.token;
+                sessionStorage.setItem('app_token', sessionToken);
+                currentUser = res.data.user;
+                document.getElementById('user-display').innerText = currentUser.username;
+                Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Selamat Datang!', timer: 1500, showConfirmButton:false });
+                showApp();
+                switchMenu('dashboard');
+            } else {
+                Swal.fire({ icon: 'error', title: 'Gagal', text: res.message });
+            }
+        }
+
+        function doLogout() {
+            sessionStorage.removeItem('app_token');
+            sessionToken = null;
+            document.getElementById('app-shell').style.display = 'none';
+            document.getElementById('app-login').style.display = 'flex';
+        }
+
+        function showApp() {
+            document.getElementById('app-login').style.display = 'none';
+            document.getElementById('app-shell').style.display = 'block';
+        }
+
+        function showLoader() { document.getElementById('loader').style.display = 'flex'; }
+        function hideLoader() { document.getElementById('loader').style.display = 'none'; }
+
+        // ==========================================
+        // ROUTING & MENU RENDERING
+        // ==========================================
+        function switchMenu(menu, el) {
+            if(el) {
+                document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+                el.classList.add('active');
+            }
+            if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('show');
+            
+            const container = document.getElementById('main-content');
+            const title = document.getElementById('page-title');
+
+            switch(menu) {
+                case 'dashboard':
+                    title.innerText = "Dashboard Utama";
+                    renderDashboard(container);
+                    break;
+                case 'waktu':
+                    title.innerText = "Pengaturan Waktu Manual";
+                    renderWaktu(container);
+                    break;
+                case 'jadwal':
+                    title.innerText = "Susun Jadwal AI / Manual";
+                    renderJadwal(container);
+                    break;
+                default:
+                    title.innerText = "Data " + menu.charAt(0).toUpperCase() + menu.slice(1);
+                    container.innerHTML = `
+                        <div class="card border-0 shadow-sm"><div class="card-body p-5 text-center text-muted">
+                            <i class="fas fa-tools fa-3x mb-3"></i>
+                            <h5>Modul ${menu} sedang dalam pengembangan pada versi dasar ini.</h5>
+                            <p>Data dapat diisi langsung di Google Sheets Anda.</p>
+                        </div></div>`;
+            }
+        }
+
+        async function renderDashboard(container) {
+            showLoader();
+            const res = await fetchAPI('getInitialData', { token: sessionToken });
+            hideLoader();
+            
+            let stats = { guru: 0, kelas: 0, mapel: 0 };
+            if(res.success && res.data) stats = res.data.stats;
+
+            container.innerHTML = `
+                <div class="row g-4">
+                    <div class="col-12 col-md-4">
+                        <div class="card border-0 shadow-sm border-start border-4 border-primary h-100">
+                            <div class="card-body">
+                                <h6 class="text-muted">Total Guru</h6>
+                                <h2 class="fw-bold">${stats.guru}</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <div class="card border-0 shadow-sm border-start border-4 border-success h-100">
+                            <div class="card-body">
+                                <h6 class="text-muted">Total Kelas</h6>
+                                <h2 class="fw-bold">${stats.kelas}</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <div class="card border-0 shadow-sm border-start border-4 border-warning h-100">
+                            <div class="card-body">
+                                <h6 class="text-muted">Total Mapel</h6>
+                                <h2 class="fw-bold">${stats.mapel}</h2>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function renderWaktu(container) {
+            container.innerHTML = `
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-header bg-white pt-4 pb-3 px-4 d-flex justify-content-between align-items-center">
+                        <h6 class="fw-bold mb-0 text-primary-custom"><i class="fas fa-list-ol me-2"></i> Edit Sesi Waktu</h6>
+                        <button class="btn btn-sm btn-outline-primary fw-bold" onclick="tambahBarisWaktu()"><i class="fas fa-plus"></i> Tambah</button>
+                    </div>
+                    <div class="card-body p-0 table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="bg-light text-muted small">
+                                <tr>
+                                    <th class="ps-4">Nama Sesi</th>
+                                    <th>Mulai</th>
+                                    <th>Selesai</th>
+                                    <th>Jenis</th>
+                                    <th class="text-end pe-4">Hapus</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-waktu">
+                                <tr><td colspan="5" class="text-center py-4">Memuat data...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer bg-white p-3 text-end border-top">
+                        <button class="btn btn-success fw-bold px-4" onclick="simpanWaktu()">
+                            <i class="fas fa-save me-1"></i> Simpan ke Database
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Fetch dari GAS
+            const res = await fetchAPI('getWaktu', { token: sessionToken });
+            const tbody = document.getElementById('tbody-waktu');
+            tbody.innerHTML = '';
+            
+            let dataWaktu = [];
+            if(res.success && res.data) dataWaktu = res.data;
+            
+            if(dataWaktu.length === 0) {
+                // Beri contoh jika kosong
+                dataWaktu = [
+                    { nama_sesi: 'JP 1', jam_mulai: '07:30', jam_selesai: '08:05', jenis: 'pelajaran' }
+                ];
+            }
+
+            dataWaktu.forEach(w => appendBarisWaktu(w));
+        }
+
+        function appendBarisWaktu(w) {
+            const tbody = document.getElementById('tbody-waktu');
+            const tr = document.createElement('tr');
+            const isIstirahat = w.jenis === 'istirahat';
+            tr.style.backgroundColor = isIstirahat ? '#fff8e1' : 'transparent';
+            
+            tr.innerHTML = `
+                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold w-nama" value="${w.nama_sesi}"></td>
+                <td><input type="time" class="form-control form-control-sm text-center w-mulai" value="${w.jam_mulai}"></td>
+                <td><input type="time" class="form-control form-control-sm text-center w-selesai" value="${w.jam_selesai}"></td>
+                <td>
+                    <select class="form-select form-select-sm w-jenis" onchange="this.closest('tr').style.backgroundColor = this.value==='istirahat' ? '#fff8e1' : 'transparent'">
+                        <option value="pelajaran" ${!isIstirahat ? 'selected' : ''}>Pelajaran</option>
+                        <option value="istirahat" ${isIstirahat ? 'selected' : ''}>Istirahat</option>
+                    </select>
+                </td>
+                <td class="text-end pe-4"><button class="btn btn-sm text-danger bg-light" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function tambahBarisWaktu() {
+            appendBarisWaktu({ nama_sesi: 'Sesi Baru', jam_mulai: '00:00', jam_selesai: '00:00', jenis: 'pelajaran' });
+        }
+
+        async function simpanWaktu() {
+            const rows = document.querySelectorAll('#tbody-waktu tr');
+            let dataToSave = [];
+            
+            rows.forEach(tr => {
+                const nama = tr.querySelector('.w-nama');
+                if(nama) { // Cek agar bukan row loading
+                    dataToSave.push({
+                        nama_sesi: nama.value,
+                        jam_mulai: tr.querySelector('.w-mulai').value,
+                        jam_selesai: tr.querySelector('.w-selesai').value,
+                        jenis: tr.querySelector('.w-jenis').value
+                    });
+                }
+            });
+
+            showLoader();
+            const res = await fetchAPI('saveWaktu', { token: sessionToken, waktuList: dataToSave });
+            hideLoader();
+            
+            if(res.success) {
+                Swal.fire('Tersimpan', res.message, 'success');
+            } else {
+                Swal.fire('Gagal', res.message, 'error');
+            }
+        }
+
+        function renderJadwal(container) {
+            container.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <select class="form-select w-auto fw-bold"><option>Kelas 1</option></select>
+                    <button class="btn btn-warning fw-bold"><i class="fas fa-robot"></i> Auto-Generate AI</button>
+                </div>
+                <div class="alert alert-info small"><i class="fas fa-info-circle"></i> Jadwal interaktif (Drag & Drop) di versi Production memerlukan pengambilan data relasi dari sheet Kelas, Guru, dan Mapel.</div>
+                <div class="card shadow-sm"><div class="card-body p-0 overflow-auto">
+                    <table class="table schedule-table table-bordered mb-0">
+                        <thead><tr><th>Waktu</th><th>Senin</th><th>Selasa</th><th>Rabu</th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <td class="bg-light fw-bold">07.30 - 08.05</td>
+                                <td><div class="lesson-card"><b>Tematik</b><br><small>Budi, S.Pd</small></div></td>
+                                <td></td><td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div></div>
+            `;
+        }
+
+        // ==========================================
+        // MOCK API (HANYA AKTIF SAAT PREVIEW DI CANVAS)
+        // ==========================================
+        async function mockAPI(action, payload) {
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    switch(action) {
+                        case 'login':
+                            if(payload.username==='admin' && payload.password==='admin123') 
+                                resolve({success:true, data:{token:'mock_token', user:{username:'admin'}}});
+                            else resolve({success:false, message:'Salah sandi.'});
+                            break;
+                        case 'getInitialData':
+                            resolve({success:true, data: { currentUser: {username:'admin'}, stats: {guru: 42, kelas: 18, mapel: 25} } });
+                            break;
+                        case 'getWaktu':
+                            resolve({success:true, data:[
+                                {nama_sesi:'JP 1', jam_mulai:'07:30', jam_selesai:'08:05', jenis:'pelajaran'},
+                                {nama_sesi:'JP 2', jam_mulai:'08:05', jam_selesai:'08:40', jenis:'pelajaran'},
+                                {nama_sesi:'Istirahat', jam_mulai:'08:40', jam_selesai:'09:00', jenis:'istirahat'}
+                            ]});
+                            break;
+                        case 'saveWaktu': resolve({success:true, message:'Tersimpan ke Dummy DB!'}); break;
+                        default: resolve({success:false, message:'Mock Endpoint tidak ditemukan'});
+                    }
+                }, 500);
+            });
+        }
+    </script>
+</body>
+</html>
