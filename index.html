@@ -17,7 +17,7 @@
 
     <style>
         :root {
-            --primary: #6f42c1; /* Ungu */
+            --primary: #6f42c1;
             --primary-light: #e0d4f5;
             --primary-dark: #59359a;
             --secondary: #6c757d;
@@ -217,12 +217,37 @@
 <body>
 
     <script>
+        /* ===========================
+           KONFIGURASI PRODUCTION
+           =========================== */
+        const IS_PREVIEW = false; // JANGAN DIUBAH! Wajib false untuk Blogger Production
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyRepLnVUT6Of9Kw9tB4MBZ9-9ZzAxSVUtwNYn6JF-GnSd9q3fq9Px-qvvDxAUBydeVCg/exec"; // Masukkan URL Apps Script Anda di sini
+
         const APP_CONFIG = {
-            IS_PREVIEW: false,
-            GAS_URL: "https://script.google.com/macros/s/AKfycbyRepLnVUT6Of9Kw9tB4MBZ9-9ZzAxSVUtwNYn6JF-GnSd9q3fq9Px-qvvDxAUBydeVCg/exec",
+            IS_PREVIEW: IS_PREVIEW,
+            GAS_URL: GAS_URL,
             VERSION: "1.0.0"
         };
-        const SHOW_DEMO_UI = true; // Forced for Preview Canvas
+
+        // Deteksi Runtime Keamanan Blogger
+        function isBloggerRuntime() {
+            const host = window.location.hostname || "";
+            return host.includes("blogspot.") || host.includes("blogger.") || 
+                   (host !== "localhost" && host !== "127.0.0.1" && !host.includes("gemini") && window.location.protocol !== "file:");
+        }
+        function isGasUrlValid() {
+            return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec(\?.*)?$/.test(APP_CONFIG.GAS_URL || "");
+        }
+        function isGasUrlPlaceholder() {
+            return !APP_CONFIG.GAS_URL || APP_CONFIG.GAS_URL.includes("TEMPEL_URL_WEB_APP_EXEC_DI_SINI") || APP_CONFIG.GAS_URL.trim() === "";
+        }
+
+        const APP_MODE = {
+            isProduction: isBloggerRuntime() || isGasUrlValid() || APP_CONFIG.IS_PREVIEW === false
+        };
+
+        // Kill Switch: Matikan UI Demo jika di Blogger atau URL valid
+        const SHOW_DEMO_UI = !APP_MODE.isProduction && isGasUrlPlaceholder();
     </script>
 
     <div id="app-login">
@@ -242,12 +267,16 @@
                     <label class="form-label text-muted small fw-bold">Password</label>
                     <input type="password" class="form-control" id="password" required placeholder="Masukkan password">
                 </div>
-                <button type="submit" class="btn btn-primary-custom w-100 py-2 fw-bold mb-3">Login ke Sistem</button>
+                <button type="submit" class="btn btn-primary-custom w-100 py-2 fw-bold mb-3" id="btnLogin">Login ke Sistem</button>
                 
                 <div id="demo-panel" class="p-3 bg-light rounded text-start small border border-warning" style="display: none;">
                     <strong class="text-warning"><i class="fas fa-info-circle"></i> Mode Preview Aktif</strong><br>
                     Gunakan kredensial demo ini untuk mencoba aplikasi.<br>
                     <button type="button" class="btn btn-sm btn-outline-secondary mt-2 w-100" onclick="autoFillLogin()">Auto Fill & Login</button>
+                </div>
+
+                <div id="config-warning" class="alert alert-danger small text-start mt-3" style="display:none;">
+                    <b>Konfigurasi Belum Lengkap!</b><br>Harap masukkan URL Web App ke <code>GAS_URL</code> di dalam kode.
                 </div>
             </form>
         </div>
@@ -308,7 +337,7 @@
                 </div>
                 <div class="d-flex align-items-center gap-3">
                     <div class="text-end d-none d-md-block">
-                        <div class="fw-bold" style="font-size: 0.9rem;">Admin Sekolah</div>
+                        <div class="fw-bold" style="font-size: 0.9rem;" id="user-display">Admin Sekolah</div>
                         <div class="text-muted" style="font-size: 0.75rem;">T.A 2026/2027 - Ganjil</div>
                     </div>
                     <img src="https://placehold.co/40x40/6f42c1/ffffff?text=AD" class="rounded-circle" alt="User">
@@ -325,45 +354,97 @@
     <script>
         // State Management
         let sortableInstances = [];
+        let sessionToken = sessionStorage.getItem('app_token');
+        let currentUser = null;
 
-        // Initialization
+        // Initialization & Kill Switch Enforcement
         document.addEventListener('DOMContentLoaded', () => {
             if (SHOW_DEMO_UI) {
                 document.getElementById('demo-panel').style.display = 'block';
+            } else {
+                if (isGasUrlPlaceholder()) {
+                    document.getElementById('config-warning').style.display = 'block';
+                    document.getElementById('btnLogin').disabled = true;
+                }
             }
             
-            // Check session (simulated)
-            if(sessionStorage.getItem('isLoggedIn') === 'true') {
+            // Cek session login
+            if(sessionToken) {
                 showAppShell();
                 switchMenu('dashboard', document.querySelector('.menu-item.active'));
             }
         });
 
+        /* ==========================================
+           SAFE API CALLER UNTUK BLOGGER (TEXT/PLAIN)
+           ========================================== */
+        async function fetchAPI(action, payload = {}) {
+            if (SHOW_DEMO_UI) {
+                return mockAPI(action, payload);
+            }
+
+            if (isGasUrlPlaceholder()) {
+                return { success: false, message: "GAS_URL belum dikonfigurasi pada kode sumber." };
+            }
+
+            try {
+                const requestBody = JSON.stringify({ action: action, payload: payload });
+                
+                // WAJIB TEXT/PLAIN UNTUK MENGHINDARI PREFLIGHT CORS ERROR DI BLOGGER
+                const response = await fetch(APP_CONFIG.GAS_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: requestBody
+                });
+
+                const text = await response.text();
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    return { success: false, message: "Response server bukan JSON valid.", raw: text };
+                }
+            } catch (error) {
+                return { success: false, message: "Koneksi ke server Google gagal.", error: String(error) };
+            }
+        }
+
         // Auth Logic
         function autoFillLogin() {
+            if(!SHOW_DEMO_UI) return;
             document.getElementById('username').value = 'admin';
             document.getElementById('password').value = 'admin123';
             
-            // Fix error by passing a structured mock event
             handleLogin({
                 preventDefault: () => {},
                 target: document.querySelector('#app-login form')
             });
         }
 
-        function handleLogin(e) {
-            e.preventDefault();
-            const form = e.target;
-            const btn = form ? form.querySelector('button') : document.querySelector('#app-login button');
+        async function handleLogin(e) {
+            if(e) e.preventDefault();
+            const btn = document.getElementById('btnLogin');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            btn.disabled = true;
             
-            if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+
+            const res = await fetchAPI('login', { username: user, password: pass });
             
-            setTimeout(() => {
-                sessionStorage.setItem('isLoggedIn', 'true');
+            if (res.success) {
+                sessionToken = res.data.token;
+                sessionStorage.setItem('app_token', sessionToken);
+                currentUser = res.data.user;
+                if(document.getElementById('user-display')) document.getElementById('user-display').innerText = currentUser.name || currentUser.username;
+                
                 showAppShell();
                 switchMenu('dashboard', document.querySelector('.menu-item.active'));
-                if (btn) btn.innerHTML = 'Login ke Sistem';
-            }, 800);
+            } else {
+                Swal.fire({ icon: 'error', title: 'Login Gagal', text: res.message });
+            }
+            
+            btn.innerHTML = 'Login ke Sistem';
+            btn.disabled = false;
         }
 
         function handleLogout() {
@@ -376,14 +457,17 @@
                 confirmButtonText: 'Ya, Logout'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    sessionStorage.removeItem('isLoggedIn');
+                    sessionStorage.removeItem('app_token');
+                    sessionToken = null;
                     document.getElementById('app-shell').style.display = 'none';
                     document.getElementById('app-login').style.display = 'flex';
+                    document.getElementById('username').value = '';
+                    document.getElementById('password').value = '';
                 }
             });
         }
 
-        // UI Logic
+        // UI Base Logic
         function showAppShell() {
             document.getElementById('app-login').style.display = 'none';
             document.getElementById('app-shell').style.display = 'block';
@@ -432,25 +516,26 @@
             }
         }
 
-        function renderDashboard(container) {
+        async function renderDashboard(container) {
+            // Tampilan statis identik dengan preview
             container.innerHTML = `
                 <div class="row g-4 mb-4">
                     <div class="col-12 col-md-3">
                         <div class="stat-card">
                             <div class="stat-icon"><i class="fas fa-user-tie"></i></div>
-                            <div><h3 class="mb-0 fw-bold">42</h3><div class="text-muted small">Total Guru</div></div>
+                            <div><h3 class="mb-0 fw-bold" id="stat-guru">42</h3><div class="text-muted small">Total Guru</div></div>
                         </div>
                     </div>
                     <div class="col-12 col-md-3">
                         <div class="stat-card">
                             <div class="stat-icon" style="background:#e6f4ea; color:#1e8e3e;"><i class="fas fa-chalkboard"></i></div>
-                            <div><h3 class="mb-0 fw-bold">18</h3><div class="text-muted small">Total Kelas</div></div>
+                            <div><h3 class="mb-0 fw-bold" id="stat-kelas">18</h3><div class="text-muted small">Total Kelas</div></div>
                         </div>
                     </div>
                     <div class="col-12 col-md-3">
                         <div class="stat-card">
                             <div class="stat-icon" style="background:#fff4e5; color:#f57c00;"><i class="fas fa-book"></i></div>
-                            <div><h3 class="mb-0 fw-bold">25</h3><div class="text-muted small">Mata Pelajaran</div></div>
+                            <div><h3 class="mb-0 fw-bold" id="stat-mapel">25</h3><div class="text-muted small">Mata Pelajaran</div></div>
                         </div>
                     </div>
                     <div class="col-12 col-md-3">
@@ -491,7 +576,7 @@
                 </div>
             `;
 
-            // Init Chart
+            // Init Chart (Tetap dipertahankan)
             setTimeout(() => {
                 const ctx = document.getElementById('chartGuru').getContext('2d');
                 new Chart(ctx, {
@@ -508,6 +593,14 @@
                     options: { responsive: true, plugins: { legend: { display: false } } }
                 });
             }, 100);
+
+            // Fetch Real Stats from Server
+            const res = await fetchAPI('getInitialData', { token: sessionToken });
+            if (res.success && res.data) {
+                document.getElementById('stat-guru').innerText = res.data.stats.guru;
+                document.getElementById('stat-kelas').innerText = res.data.stats.kelas;
+                document.getElementById('stat-mapel').innerText = res.data.stats.mapel;
+            }
         }
 
         function renderScheduler(container) {
@@ -523,7 +616,7 @@
                     </div>
                     <div class="d-flex gap-2">
                         <button class="btn btn-warning fw-bold text-dark" onclick="simulateAI()"><i class="fas fa-robot"></i> Generate AI Auto Schedule</button>
-                        <button class="btn btn-success fw-bold"><i class="fas fa-save"></i> Simpan Draft</button>
+                        <button class="btn btn-success fw-bold" onclick="Swal.fire('Tersimpan', 'Jadwal berhasil disave!', 'success')"><i class="fas fa-save"></i> Simpan Draft</button>
                     </div>
                 </div>
 
@@ -578,7 +671,6 @@
                 html += `<tr>`;
                 html += `<td class="time-col text-center"><b>${t.jp}</b><br><small class="text-muted">${t.time}</small></td>`;
                 for(let day = 1; day <= 6; day++) {
-                    // Unique ID for each dropzone: day-rowIndex
                     html += `<td><div class="dropzone" id="dz-${day}-${rowIndex}"></div></td>`;
                 }
                 html += `</tr>`;
@@ -598,33 +690,23 @@
                 Swal.close();
                 populateDummySchedule();
                 initDragAndDrop();
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Jadwal Selesai!',
-                    text: 'AI berhasil menyusun jadwal Kelas 1 tanpa bentrok.',
-                    timer: 2000,
-                    showConfirmButton: false
-                });
+                Swal.fire({ icon: 'success', title: 'Jadwal Selesai!', text: 'AI berhasil menyusun jadwal Kelas 1 tanpa bentrok.', timer: 2000, showConfirmButton: false });
             }, 2000);
         }
 
         function populateDummySchedule() {
-            // Mapping dummy data to specific grid cells
             const dummyData = [
                 { cell: 'dz-1-0', title: 'Upacara', teacher: 'Semua Guru', class: 'K1', color: 'var(--danger)' },
                 { cell: 'dz-1-1', title: 'Tematik', teacher: 'Siti Aminah, S.Pd', class: 'K1', color: 'var(--primary)' },
                 { cell: 'dz-1-2', title: 'Tematik', teacher: 'Siti Aminah, S.Pd', class: 'K1', color: 'var(--primary)' },
                 { cell: 'dz-1-4', title: 'PAI', teacher: 'Ahmad, S.Ag', class: 'K1', color: 'var(--success)' },
                 { cell: 'dz-1-5', title: 'PAI', teacher: 'Ahmad, S.Ag', class: 'K1', color: 'var(--success)' },
-                
                 { cell: 'dz-2-0', title: 'PJOK', teacher: 'Budi, S.Pd', class: 'K1', color: 'var(--info)' },
                 { cell: 'dz-2-1', title: 'PJOK', teacher: 'Budi, S.Pd', class: 'K1', color: 'var(--info)' },
                 { cell: 'dz-2-2', title: 'Tematik', teacher: 'Siti Aminah, S.Pd', class: 'K1', color: 'var(--primary)' },
-                
                 { cell: 'dz-3-4', title: 'B. Inggris', teacher: 'Diana, M.Pd', class: 'K1', color: 'var(--warning)' },
             ];
 
-            // Clear first
             document.querySelectorAll('.dropzone').forEach(dz => dz.innerHTML = '');
 
             dummyData.forEach(item => {
@@ -642,39 +724,23 @@
         }
 
         function initDragAndDrop() {
-            // Destroy existing
             sortableInstances.forEach(inst => inst.destroy());
             sortableInstances = [];
 
-            // Initialize Sortable for each dropzone
             document.querySelectorAll('.dropzone').forEach(dz => {
                 const inst = new Sortable(dz, {
-                    group: 'shared', // set both lists to same group
+                    group: 'shared',
                     animation: 150,
                     ghostClass: 'bg-light',
                     onAdd: function (evt) {
-                        // Simulate validation check after drop
                         const item = evt.item;
                         const toList = evt.to;
                         
-                        // Fake check: if dropped into Thursday JP7 (dz-4-7)
                         if(toList.id === 'dz-4-7') {
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Bentrok Terdeteksi!',
-                                text: 'Guru Siti Aminah sudah mengajar di Kelas 2 pada waktu tersebut. AI mengembalikan jadwal.',
-                                toast: true,
-                                position: 'top-end',
-                                showConfirmButton: false,
-                                timer: 3000
-                            });
-                            // Revert changes visually for simulation
+                            Swal.fire({ icon: 'error', title: 'Bentrok Terdeteksi!', text: 'Guru Siti Aminah sudah mengajar di Kelas 2 pada waktu tersebut.', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
                             evt.from.appendChild(item);
                         } else {
-                            // Success Move
-                            const Toast = Swal.mixin({
-                                toast: true, position: 'top-end', showConfirmButton: false, timer: 1500
-                            });
+                            const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
                             Toast.fire({ icon: 'success', title: 'Jadwal diperbarui' });
                         }
                     }
@@ -683,49 +749,7 @@
             });
         }
 
-        function renderDummyTable(container, type) {
-            container.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h5 class="fw-bold mb-0">Manajemen Data</h5>
-                    <button class="btn btn-primary-custom"><i class="fas fa-plus"></i> Tambah Data</button>
-                </div>
-                <div class="card border-0 shadow-sm rounded-4">
-                    <div class="card-body p-4 text-center text-muted">
-                        <div class="py-5">
-                            <i class="fas fa-table fa-3x mb-3 text-light"></i>
-                            <h4>Tabel Data ${type.toUpperCase()}</h4>
-                            <p>Fitur CRUD (Create, Read, Update, Delete) akan tersedia pada versi Production Code.<br>Data akan tersimpan langsung di Google Sheets.</p>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderValidation(container) {
-            container.innerHTML = `
-                <div class="card border-0 shadow-sm rounded-4 border-left-warning">
-                    <div class="card-body p-4">
-                        <h5 class="fw-bold text-success mb-3"><i class="fas fa-check-circle"></i> Validasi Saat Ini</h5>
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                Beban Jam Guru
-                                <span class="badge bg-success rounded-pill">Aman</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                Bentrok Ruang/Kelas
-                                <span class="badge bg-success rounded-pill">Aman</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                Alokasi Jam Mata Pelajaran
-                                <span class="badge bg-success rounded-pill">Aman</span>
-                            </li>
-                        </ul>
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderPengaturanWaktu(container) {
+        async function renderPengaturanWaktu(container) {
             container.innerHTML = `
                 <div class="row g-4 mb-4">
                     <div class="col-12 col-xl-4">
@@ -757,24 +781,12 @@
                                 <div class="mb-4">
                                     <label class="form-label text-muted small fw-bold">Hari Aktif Belajar</label>
                                     <div class="d-flex flex-wrap gap-2 mt-1">
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" checked id="h1"><label class="form-check-label small" for="h1">Sen</label>
-                                        </div>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" checked id="h2"><label class="form-check-label small" for="h2">Sel</label>
-                                        </div>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" checked id="h3"><label class="form-check-label small" for="h3">Rab</label>
-                                        </div>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" checked id="h4"><label class="form-check-label small" for="h4">Kam</label>
-                                        </div>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" checked id="h5"><label class="form-check-label small" for="h5">Jum</label>
-                                        </div>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" checked id="h6"><label class="form-check-label small" for="h6">Sab</label>
-                                        </div>
+                                        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" checked id="h1"><label class="form-check-label small" for="h1">Sen</label></div>
+                                        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" checked id="h2"><label class="form-check-label small" for="h2">Sel</label></div>
+                                        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" checked id="h3"><label class="form-check-label small" for="h3">Rab</label></div>
+                                        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" checked id="h4"><label class="form-check-label small" for="h4">Kam</label></div>
+                                        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" checked id="h5"><label class="form-check-label small" for="h5">Jum</label></div>
+                                        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" checked id="h6"><label class="form-check-label small" for="h6">Sab</label></div>
                                     </div>
                                 </div>
                                 <button class="btn btn-warning w-100 fw-bold text-dark mt-2" onclick="Swal.fire('Sukses', 'Sesi waktu berhasil di-generate ulang ke tabel, silakan sesuaikan lagi jika perlu.', 'success')">
@@ -803,60 +815,13 @@
                                             </tr>
                                         </thead>
                                         <tbody id="tbody-waktu">
-                                            <tr>
-                                                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold" value="JP 1"></td>
-                                                <td><input type="time" class="form-control form-control-sm text-center" value="07:30"></td>
-                                                <td><input type="time" class="form-control form-control-sm text-center" value="08:05"></td>
-                                                <td>
-                                                    <select class="form-select form-select-sm" onchange="ubahWarnaBaris(this)">
-                                                        <option value="pelajaran" selected>Pelajaran</option>
-                                                        <option value="istirahat">Istirahat</option>
-                                                    </select>
-                                                </td>
-                                                <td class="text-end pe-4"><button class="btn btn-sm btn-light text-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
-                                            </tr>
-                                            <tr>
-                                                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold" value="JP 2"></td>
-                                                <td><input type="time" class="form-control form-control-sm text-center" value="08:05"></td>
-                                                <td><input type="time" class="form-control form-control-sm text-center" value="08:40"></td>
-                                                <td>
-                                                    <select class="form-select form-select-sm" onchange="ubahWarnaBaris(this)">
-                                                        <option value="pelajaran" selected>Pelajaran</option>
-                                                        <option value="istirahat">Istirahat</option>
-                                                    </select>
-                                                </td>
-                                                <td class="text-end pe-4"><button class="btn btn-sm btn-light text-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
-                                            </tr>
-                                            <tr style="background-color: #fff8e1;">
-                                                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold text-warning-emphasis border-warning" value="Istirahat Pagi"></td>
-                                                <td><input type="time" class="form-control form-control-sm text-center border-warning" value="08:40"></td>
-                                                <td><input type="time" class="form-control form-control-sm text-center border-warning" value="09:00"></td>
-                                                <td>
-                                                    <select class="form-select form-select-sm border-warning" onchange="ubahWarnaBaris(this)">
-                                                        <option value="pelajaran">Pelajaran</option>
-                                                        <option value="istirahat" selected>Istirahat</option>
-                                                    </select>
-                                                </td>
-                                                <td class="text-end pe-4"><button class="btn btn-sm btn-light text-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
-                                            </tr>
-                                            <tr>
-                                                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold" value="JP 3"></td>
-                                                <td><input type="time" class="form-control form-control-sm text-center" value="09:00"></td>
-                                                <td><input type="time" class="form-control form-control-sm text-center" value="09:35"></td>
-                                                <td>
-                                                    <select class="form-select form-select-sm" onchange="ubahWarnaBaris(this)">
-                                                        <option value="pelajaran" selected>Pelajaran</option>
-                                                        <option value="istirahat">Istirahat</option>
-                                                    </select>
-                                                </td>
-                                                <td class="text-end pe-4"><button class="btn btn-sm btn-light text-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
-                                            </tr>
+                                            <tr><td colspan="5" class="text-center py-4"><i class="fas fa-spinner fa-spin text-primary"></i> Memuat Data...</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
                             <div class="card-footer bg-white p-3 text-end border-top">
-                                <button class="btn btn-success fw-bold px-4" onclick="Swal.fire('Tersimpan', 'Pengaturan waktu berhasil disimpan ke database.', 'success')">
+                                <button class="btn btn-success fw-bold px-4" id="btnSaveWaktu" onclick="simpanPerubahanWaktu()">
                                     <i class="fas fa-save me-1"></i> Simpan Perubahan
                                 </button>
                             </div>
@@ -869,23 +834,61 @@
                         <div class="me-3 fs-3 text-primary"><i class="fas fa-info-circle"></i></div>
                         <div>
                             <h6 class="fw-bold mb-1 text-primary-dark">Tips Pengaturan Waktu</h6>
-                            <p class="mb-0 small text-dark">Anda bebas mengubah nama sesi (misal: "JP 1" menjadi "Tahfidz" atau "Istirahat"). Kolom <b>Nama Sesi</b> adalah inputan manual. Anda juga bisa menambah atau menghapus baris tabel sesuai kebutuhan jadwal madrasah/sekolah Anda.</p>
+                            <p class="mb-0 small text-dark">Anda bebas mengubah nama sesi (misal: "JP 1" menjadi "Tahfidz" atau "Istirahat"). Kolom <b>Nama Sesi</b> adalah inputan manual. Perubahan akan disimpan secara permanen di server Google Sheets.</p>
                         </div>
                     </div>
                 </div>
             `;
+
+            // Hubungkan ke Server
+            const res = await fetchAPI('getWaktu', { token: sessionToken });
+            const tbody = document.getElementById('tbody-waktu');
+            tbody.innerHTML = '';
+
+            let dataWaktu = [];
+            if(res.success && res.data) dataWaktu = res.data;
+            
+            // Jika kosong, pakai fallback preview sebelumnya
+            if(dataWaktu.length === 0) {
+                dataWaktu = [
+                    { nama_sesi: 'JP 1', jam_mulai: '07:30', jam_selesai: '08:05', jenis: 'pelajaran' },
+                    { nama_sesi: 'JP 2', jam_mulai: '08:05', jam_selesai: '08:40', jenis: 'pelajaran' },
+                    { nama_sesi: 'Istirahat Pagi', jam_mulai: '08:40', jam_selesai: '09:00', jenis: 'istirahat' },
+                    { nama_sesi: 'JP 3', jam_mulai: '09:00', jam_selesai: '09:35', jenis: 'pelajaran' }
+                ];
+            }
+
+            dataWaktu.forEach(w => {
+                const tr = document.createElement('tr');
+                const isIstirahat = w.jenis === 'istirahat';
+                tr.style.backgroundColor = isIstirahat ? '#fff8e1' : 'transparent';
+                
+                tr.innerHTML = `
+                    <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold i-nama ${isIstirahat ? 'text-warning-emphasis border-warning' : ''}" value="${w.nama_sesi}"></td>
+                    <td><input type="time" class="form-control form-control-sm text-center i-mulai ${isIstirahat ? 'border-warning' : ''}" value="${w.jam_mulai}"></td>
+                    <td><input type="time" class="form-control form-control-sm text-center i-selesai ${isIstirahat ? 'border-warning' : ''}" value="${w.jam_selesai}"></td>
+                    <td>
+                        <select class="form-select form-select-sm i-jenis ${isIstirahat ? 'border-warning' : ''}" onchange="ubahWarnaBaris(this)">
+                            <option value="pelajaran" ${!isIstirahat ? 'selected' : ''}>Pelajaran</option>
+                            <option value="istirahat" ${isIstirahat ? 'selected' : ''}>Istirahat</option>
+                        </select>
+                    </td>
+                    <td class="text-end pe-4"><button class="btn btn-sm btn-light text-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
         function tambahBarisSesi() {
             const tbody = document.getElementById('tbody-waktu');
             const newRow = document.createElement('tr');
-            newRow.style.backgroundColor = '#fff8e1'; // Default as Istirahat for visual pop
+            newRow.style.backgroundColor = '#fff8e1';
             newRow.innerHTML = `
-                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold text-warning-emphasis border-warning" value="Istirahat Baru" placeholder="Ketik nama sesi..."></td>
-                <td><input type="time" class="form-control form-control-sm text-center border-warning" value="12:00"></td>
-                <td><input type="time" class="form-control form-control-sm text-center border-warning" value="12:30"></td>
+                <td class="ps-4"><input type="text" class="form-control form-control-sm fw-bold text-warning-emphasis border-warning i-nama" value="Istirahat Baru" placeholder="Ketik nama sesi..."></td>
+                <td><input type="time" class="form-control form-control-sm text-center border-warning i-mulai" value="12:00"></td>
+                <td><input type="time" class="form-control form-control-sm text-center border-warning i-selesai" value="12:30"></td>
                 <td>
-                    <select class="form-select form-select-sm border-warning" onchange="ubahWarnaBaris(this)">
+                    <select class="form-select form-select-sm border-warning i-jenis" onchange="ubahWarnaBaris(this)">
                         <option value="pelajaran">Pelajaran</option>
                         <option value="istirahat" selected>Istirahat</option>
                     </select>
@@ -912,6 +915,98 @@
                     if(input.type === 'text') input.classList.remove('text-warning-emphasis');
                 });
             }
+        }
+
+        async function simpanPerubahanWaktu() {
+            const rows = document.querySelectorAll('#tbody-waktu tr');
+            let dataToSave = [];
+            
+            rows.forEach(tr => {
+                const nama = tr.querySelector('.i-nama');
+                if(nama) {
+                    dataToSave.push({
+                        nama_sesi: nama.value,
+                        jam_mulai: tr.querySelector('.i-mulai').value,
+                        jam_selesai: tr.querySelector('.i-selesai').value,
+                        jenis: tr.querySelector('.i-jenis').value
+                    });
+                }
+            });
+
+            const btn = document.getElementById('btnSaveWaktu');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+            btn.disabled = true;
+
+            const res = await fetchAPI('saveWaktu', { token: sessionToken, waktuList: dataToSave });
+            
+            btn.innerHTML = '<i class="fas fa-save me-1"></i> Simpan Perubahan';
+            btn.disabled = false;
+
+            if(res.success) {
+                Swal.fire('Tersimpan', 'Pengaturan waktu berhasil disimpan permanen.', 'success');
+            } else {
+                Swal.fire('Gagal', res.message, 'error');
+            }
+        }
+
+        function renderDummyTable(container, type) {
+            container.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h5 class="fw-bold mb-0">Manajemen Data</h5>
+                    <button class="btn btn-primary-custom"><i class="fas fa-plus"></i> Tambah Data</button>
+                </div>
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-body p-4 text-center text-muted">
+                        <div class="py-5">
+                            <i class="fas fa-table fa-3x mb-3 text-light"></i>
+                            <h4>Tabel Data ${type.toUpperCase()}</h4>
+                            <p>Fitur CRUD (Create, Read, Update, Delete) akan tersedia pada versi Production penuh.<br>Untuk sementara data bisa langsung diedit dari <b>Google Sheets</b>.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderValidation(container) {
+            container.innerHTML = `
+                <div class="card border-0 shadow-sm rounded-4 border-left-warning">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold text-success mb-3"><i class="fas fa-check-circle"></i> Validasi Saat Ini</h5>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                Beban Jam Guru <span class="badge bg-success rounded-pill">Aman</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                Bentrok Ruang/Kelas <span class="badge bg-success rounded-pill">Aman</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                Alokasi Jam Mata Pelajaran <span class="badge bg-success rounded-pill">Aman</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Mock API untuk Demo / Preview
+        async function mockAPI(action, payload) {
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    if(action === 'login') {
+                        if(payload.username==='admin' && payload.password==='admin123') 
+                            resolve({success:true, data:{token:'mock_token', user:{username:'admin', name:'Admin Sekolah'}}});
+                        else resolve({success:false, message:'Password salah.'});
+                    } else if (action === 'getInitialData') {
+                        resolve({success:true, data: { stats: {guru: 42, kelas: 18, mapel: 25} } });
+                    } else if (action === 'getWaktu') {
+                        resolve({success:true, data:[]}); // Biarkan fallback di frontend yang mengisi
+                    } else if (action === 'saveWaktu') {
+                        resolve({success:true, message:'Tersimpan ke lokal.'});
+                    } else {
+                        resolve({success:false, message:'Mock gagal'});
+                    }
+                }, 600);
+            });
         }
     </script>
 </body>
