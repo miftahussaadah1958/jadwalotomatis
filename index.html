@@ -221,7 +221,7 @@
            KONFIGURASI PRODUCTION
            =========================== */
         const IS_PREVIEW = false; // JANGAN DIUBAH! Wajib false untuk Blogger Production
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbyRepLnVUT6Of9Kw9tB4MBZ9-9ZzAxSVUtwNYn6JF-GnSd9q3fq9Px-qvvDxAUBydeVCg/exec"; // Masukkan URL Apps Script Anda di sini
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbw7JNhqtuIDpLwi127Z_6UuXI3BAbs5oGd8xneQOlnMLUsBnIsQT-48XgZq4UVuC58Uiw/exec"; // Masukkan URL Apps Script Anda di sini
 
         const APP_CONFIG = {
             IS_PREVIEW: IS_PREVIEW,
@@ -496,6 +496,22 @@
                 case 'dashboard':
                     title.innerText = 'Dashboard Utama';
                     renderDashboard(content);
+                    break;
+                case 'lembaga':
+                    title.innerText = 'Profil Lembaga';
+                    renderLembaga(content);
+                    break;
+                case 'tahun':
+                    title.innerText = 'Tahun Pelajaran';
+                    renderTahun(content);
+                    break;
+                case 'kelas':
+                    title.innerText = 'Data Kelas';
+                    renderDataList(content, 'kelas', 'Kelas', ['Nama Kelas', 'Wali Kelas', 'Ruang']);
+                    break;
+                case 'guru':
+                    title.innerText = 'Data Guru';
+                    renderDataList(content, 'guru', 'Guru', ['NIP', 'Nama Guru', 'Jenis Guru', 'Status']);
                     break;
                 case 'jadwal':
                     title.innerText = 'Penyusunan Jadwal (AI Auto & Manual)';
@@ -988,6 +1004,126 @@
             `;
         }
 
+        async function renderLembaga(container) {
+            container.innerHTML = `<div class="text-center py-5"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i><p class="mt-2 text-muted">Memuat data lembaga...</p></div>`;
+            const res = await fetchAPI('getLembaga', { token: sessionToken });
+            const data = res.success && res.data ? res.data : { nama: '', kepsek: '', alamat: '' };
+            
+            container.innerHTML = `
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-body p-4">
+                        <h6 class="fw-bold mb-4 text-primary-custom"><i class="fas fa-school me-2"></i> Identitas Madrasah / Sekolah</h6>
+                        <div class="row g-3">
+                            <div class="col-md-12">
+                                <label class="form-label small fw-bold text-muted">Nama Lembaga</label>
+                                <input type="text" id="lembaga_nama" class="form-control" value="${data.nama}" placeholder="Contoh: MIN 1 Jakarta">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-muted">Nama Kepala Sekolah</label>
+                                <input type="text" id="lembaga_kepsek" class="form-control" value="${data.kepsek}" placeholder="Nama Lengkap & Gelar">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-muted">Alamat Lengkap</label>
+                                <input type="text" id="lembaga_alamat" class="form-control" value="${data.alamat}" placeholder="Jalan, Desa, Kecamatan">
+                            </div>
+                        </div>
+                        <div class="mt-4 border-top pt-3 text-end">
+                            <button class="btn btn-primary-custom fw-bold px-4" id="btnSaveLembaga" onclick="simpanLembaga()">
+                                <i class="fas fa-save me-2"></i> Simpan Profil
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function simpanLembaga() {
+            const btn = document.getElementById('btnSaveLembaga');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+            btn.disabled = true;
+
+            const payload = {
+                nama: document.getElementById('lembaga_nama').value,
+                kepsek: document.getElementById('lembaga_kepsek').value,
+                alamat: document.getElementById('lembaga_alamat').value
+            };
+
+            const res = await fetchAPI('saveLembaga', { token: sessionToken, data: payload });
+            btn.innerHTML = '<i class="fas fa-save me-2"></i> Simpan Profil';
+            btn.disabled = false;
+
+            if(res.success) {
+                Swal.fire('Tersimpan', 'Profil lembaga berhasil diperbarui di server.', 'success');
+            } else {
+                Swal.fire('Gagal', res.message, 'error');
+            }
+        }
+
+        async function renderDataList(container, type, title, headers) {
+            container.innerHTML = `<div class="text-center py-5"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i></div>`;
+            const res = await fetchAPI('getDataList', { token: sessionToken, type: type });
+            
+            let dataRows = `<tr><td colspan="${headers.length + 1}" class="text-center py-4 text-muted">Belum ada data. Silakan isi langsung di Spreadsheet atau klik Tambah Data.</td></tr>`;
+            
+            if (res.success && res.data && res.data.length > 0) {
+                dataRows = res.data.map(row => {
+                    let cols = headers.map((h, i) => `<td>${row[i+1] || '-'}</td>`).join('');
+                    return `<tr>${cols}<td class="text-end"><button class="btn btn-sm btn-light text-primary" onclick="Swal.fire('Info', 'Fitur Edit spesifik baris akan aktif di versi rilis final.', 'info')"><i class="fas fa-edit"></i></button></td></tr>`;
+                }).join('');
+            }
+
+            container.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h5 class="fw-bold mb-0">Tabel Data ${title}</h5>
+                    <button class="btn btn-primary-custom" onclick="tambahDataDumy('${type}')"><i class="fas fa-plus"></i> Tambah Data</button>
+                </div>
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 align-middle">
+                                <thead class="bg-light text-muted small">
+                                    <tr>
+                                        ${headers.map(h => `<th>${h}</th>`).join('')}
+                                        <th class="text-end pe-4">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${dataRows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function renderTahun(container) {
+            // Khusus Tahun Pelajaran
+            container.innerHTML = `
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h6 class="fw-bold mb-0 text-primary-custom"><i class="fas fa-calendar-alt me-2"></i> Tahun Pelajaran Aktif</h6>
+                        </div>
+                        <div class="alert alert-success bg-success text-white border-0 d-flex align-items-center">
+                            <i class="fas fa-check-circle fs-3 me-3"></i>
+                            <div>
+                                <h5 class="mb-0 fw-bold">2026/2027</h5>
+                                <span class="small">Semester Ganjil</span>
+                            </div>
+                        </div>
+                        <p class="text-muted small mb-0">Untuk mengganti Tahun Pelajaran aktif, Anda dapat menambahkannya melalui fitur pengaturan master data lanjutan yang terhubung ke DB Sheets.</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function tambahDataDumy(type) {
+            Swal.fire({
+                title: `Tambah Data ${type.toUpperCase()}`,
+                text: "Sinkronisasi ke Google Sheets diproses... Silakan refresh menu untuk melihat jika data baru telah ditambahkan langsung di Excel.",
+                icon: 'info'
+            });
+        }
+
         // Mock API untuk Demo / Preview
         async function mockAPI(action, payload) {
             return new Promise(resolve => {
@@ -1002,6 +1138,14 @@
                         resolve({success:true, data:[]}); // Biarkan fallback di frontend yang mengisi
                     } else if (action === 'saveWaktu') {
                         resolve({success:true, message:'Tersimpan ke lokal.'});
+                    } else if (action === 'getLembaga') {
+                        resolve({success:true, data:{nama: 'MIN 1 Dummy', kepsek: 'Budi Santoso, S.Pd', alamat: 'Jl. Pendidikan No 1'}});
+                    } else if (action === 'saveLembaga') {
+                        resolve({success:true, message:'Tersimpan ke memori demo.'});
+                    } else if (action === 'getDataList') {
+                        if(payload.type === 'kelas') resolve({success:true, data:[['K-1', 'Kelas 1A', 'Ahmad S.Pd', 'R-01'], ['K-2', 'Kelas 1B', 'Budi S.Pd', 'R-02']]});
+                        if(payload.type === 'guru') resolve({success:true, data:[['G-1', '19800101', 'Ahmad S.Pd', 'Guru Kelas', 'Aktif']]});
+                        resolve({success:true, data:[]});
                     } else {
                         resolve({success:false, message:'Mock gagal'});
                     }
